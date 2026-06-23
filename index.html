@@ -92,6 +92,11 @@
   .cright-actions{display:flex;align-items:center;gap:6px}
   .linkbtn{border:1px solid var(--line);background:#fff;color:#37668A;border-radius:8px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer}
   .linkbtn:hover{background:#EEF3F8;border-color:#37668A}
+  .linkbtn.addgear{color:#1B7A4B;border-style:dashed}
+  .linkbtn.addgear:hover{background:#EAF5EE;border-color:#1B7A4B}
+  .link-hint{font-size:11px;color:var(--ink-2);margin-top:5px}
+  .link-hint a{color:#1B7A4B;font-weight:600;text-decoration:none}
+  .link-hint a:hover{text-decoration:underline}
   .linkgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .linebtn:hover{border-color:#06C755;color:#06C755}
   .linebtn.sent{border-color:#06C755;color:#06C755;background:#EBFAF0}
@@ -1242,7 +1247,7 @@ function crowInner(c){
       </div>
       <div class="crow-nodes">${nodes}</div>
     </div>
-    <div class="cright"><div class="top">${pills}<span class="chev">▶</span></div><div class="spacer"></div><div class="cright-actions">${(c.links&&c.links.sheet)?`<button class="linkbtn" onclick="event.stopPropagation();openLink('${c.id}','sheet')" title="開啟課程單">課程單</button>`:''}${(c.links&&c.links.gear)?`<button class="linkbtn" onclick="event.stopPropagation();openLink('${c.id}','gear')" title="開啟教具單連結">教具單</button>`:''}<button class="linebtn ${c.lineSent?'sent':''}" onclick="event.stopPropagation();sendLineNotice('${c.id}')"${c.lineSent?` title="已於 ${esc(new Date(c.lineSent).toLocaleString('zh-TW'))} 送出"`:''}>${c.lineSent?'已通知':'LINE 通知'}</button></div></div>`;
+    <div class="cright"><div class="top">${pills}<span class="chev">▶</span></div><div class="spacer"></div><div class="cright-actions">${(c.links&&c.links.sheet)?`<button class="linkbtn" onclick="event.stopPropagation();openLink('${c.id}','sheet')" title="開啟課程單">課程單</button>`:''}${(c.links&&c.links.gear)?`<button class="linkbtn" onclick="event.stopPropagation();openLink('${c.id}','gear')" title="開啟教具單連結">教具單</button>`:`<button class="linkbtn addgear" onclick="event.stopPropagation();window.open(GEAR_NEW_URL,'_blank','noopener')" title="到教具系統新增；完成後把連結貼回課程的「教具單」欄位">＋ 新增教具</button>`}<button class="linebtn ${c.lineSent?'sent':''}" onclick="event.stopPropagation();sendLineNotice('${c.id}')"${c.lineSent?` title="已於 ${esc(new Date(c.lineSent).toLocaleString('zh-TW'))} 送出"`:''}>${c.lineSent?'已通知':'LINE 通知'}</button></div></div>`;
 }
 function updateHeader(id){const card=document.querySelector(`.course[data-id="${id}"]`);const c=findCourse(id);if(!card||!c)return;const el=card.querySelector('.crow');if(el)el.innerHTML=crowInner(c);const f=courseFlags(c);card.classList.toggle('thisweek',isThisWeek(c.date));card.classList.toggle('warn-remind',f.remind);card.classList.toggle('warn-incomplete',!f.remind&&f.incomplete);const ttl=flagTitle(f);if(ttl)card.setAttribute('title',ttl);else card.removeAttribute('title');}
 function toggleCourse(id){document.querySelector(`.course[data-id="${id}"]`)?.classList.toggle('open');}
@@ -1280,7 +1285,7 @@ function courseBodyHTML(c){
   <div class="sec"><h4>外部連結</h4>
     <div class="linkgrid">
       <div><label>課程單</label><input value="${esc((c.links||{}).sheet||'')}" placeholder="貼上課程單網址" oninput="editLink('${c.id}','sheet',this.value)"></div>
-      <div><label>教具單</label><input value="${esc((c.links||{}).gear||'')}" placeholder="貼上教具單網址" oninput="editLink('${c.id}','gear',this.value)"></div>
+      <div><label>教具單</label><input value="${esc((c.links||{}).gear||'')}" placeholder="貼上教具單網址" oninput="editLink('${c.id}','gear',this.value)">${!((c.links||{}).gear)?`<div class="link-hint"><a href="${GEAR_NEW_URL}" target="_blank" rel="noopener">＋ 到教具系統新增 →</a>　完成後把連結貼回此欄</div>`:''}</div>
     </div>
   </div>
   <div class="sec"><h4>請款方式</h4><div id="bill-${c.id}">${billingHTML(c)}</div></div>
@@ -1683,6 +1688,7 @@ function bindUI(){
   $('#btnReset').onclick=async()=>{if(!confirm('重設為範例資料？目前資料將被覆蓋。'))return;S=seedState();await DataStore.save(S);afterLoad();toast('已重設');};
 }
 function afterLoad(){fillMonthSelect($('#fMonth'),true);fillMonthSelect($('#sMonth'),false);fillCatFilter();renderCourses();}
+const GEAR_NEW_URL='https://rent.anne.education/admin/order/new?type=internal';
 const ICON_ARCH='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg>';
 const ICON_BACK='<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
 function setArchiveView(v){archiveView=v;$('#btnArchive').innerHTML=(v?ICON_BACK+'<span>返回課程總表</span>':ICON_ARCH+'<span>封存區</span>');$('#btnArchive').classList.toggle('primary',v);$('#btnAdd').style.display=v?'none':'';renderCourses();}
