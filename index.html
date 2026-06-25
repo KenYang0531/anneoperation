@@ -216,12 +216,12 @@
   .sched-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
   .sched-head{margin-bottom:6px}
   .sched-head>div{text-align:center;font-size:12px;color:var(--ink-2);font-weight:600;padding:4px 0}
-  .sched-cell{min-height:96px;border:1px solid var(--line);border-radius:10px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;background:#fff;cursor:pointer;transition:background .12s}
+  .sched-cell{min-width:0;min-height:96px;border:1px solid var(--line);border-radius:10px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;background:#fff;cursor:pointer;transition:background .12s;overflow:hidden}
   .sched-cell:hover{background:#F7F9FB}
   .sched-cell.other{background:#FAFBFC;opacity:.55}
   .sched-cell.today{border-color:#1B7A4B;box-shadow:0 0 0 1px #1B7A4B inset}
   .sched-cell .dnum{font-size:12px;color:var(--ink-2);text-align:right;line-height:1}
-  .sched-chip{font-size:11px;line-height:1.25;border-radius:6px;padding:2px 6px;cursor:pointer;border:1.5px solid;white-space:nowrap}
+  .sched-chip{max-width:100%;font-size:11px;line-height:1.25;border-radius:6px;padding:2px 6px;cursor:pointer;border:1.5px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .sched-chip.solid{color:#fff;border-color:transparent}
   .sched-chip.hollow{background:#fff}
   .sched-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-bottom:12px}
@@ -1920,8 +1920,9 @@ function renderSchedCal(){
       (co.instructors||[]).forEach(nm=>{
         const ins=instrByName(nm);if(!isExternalInstr(ins))return;
         const col=ins.color||'#666';
-        const txt=esc(ins.name)+'／'+esc(co.name||'(未命名)')+'／'+esc(co.category||'');
-        chips.push(`<div class="sched-chip solid" style="background:${col}" title="${txt}" onclick="event.stopPropagation();gotoCourse('${co.id}')">${txt}</div>`);
+        const txt=esc(ins.name)+'／'+esc(co.name||'(未命名)');
+        const tip=esc(ins.name)+'／'+esc(co.name||'(未命名)')+'／'+esc(co.category||'');
+        chips.push(`<div class="sched-chip solid" style="background:${col}" title="${tip}" onclick="event.stopPropagation();gotoCourse('${co.id}')">${txt}</div>`);
       });
     });
     const cls='sched-cell'+(c.date===todStr?' today':'');
