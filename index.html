@@ -212,6 +212,31 @@
   /* modal */
   .scrim{position:fixed;inset:0;background:rgba(27,36,48,.45);display:none;align-items:flex-start;justify-content:center;z-index:60;padding:30px 16px;overflow:auto}
   .scrim.show{display:flex}
+  /* 講師排班工具 */
+  .sched-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+  .sched-head{margin-bottom:6px}
+  .sched-head>div{text-align:center;font-size:12px;color:var(--ink-2);font-weight:600;padding:4px 0}
+  .sched-cell{min-height:96px;border:1px solid var(--line);border-radius:10px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;background:#fff;cursor:pointer;transition:background .12s}
+  .sched-cell:hover{background:#F7F9FB}
+  .sched-cell.other{background:#FAFBFC;opacity:.55}
+  .sched-cell.today{border-color:#1B7A4B;box-shadow:0 0 0 1px #1B7A4B inset}
+  .sched-cell .dnum{font-size:12px;color:var(--ink-2);text-align:right;line-height:1}
+  .sched-chip{font-size:11px;line-height:1.25;border-radius:6px;padding:2px 6px;cursor:pointer;border:1.5px solid;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sched-chip.solid{color:#fff;border-color:transparent}
+  .sched-chip.hollow{background:#fff}
+  .sched-legend{display:flex;flex-wrap:wrap;gap:8px 14px;margin-bottom:12px}
+  .sched-legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--ink-2)}
+  .sched-legend .sw{width:12px;height:12px;border-radius:4px;border:1.5px solid}
+  .av-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+  .av-cell{min-height:40px;border:1px solid var(--line);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;cursor:pointer;user-select:none}
+  .av-cell.other{opacity:.4}
+  .av-cell.sel{background:var(--red);color:#fff;border-color:var(--red);font-weight:600}
+  .av-head>div{font-size:11px}
+  .av-row{display:flex;align-items:center;gap:10px;padding:8px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .av-row .avd{font-weight:600;min-width:84px}
+  .av-row label.slot{display:inline-flex;align-items:center;gap:3px;font-size:13px;color:var(--ink-2)}
+  .av-row input.avnote{flex:1;min-width:140px;padding:5px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .av-row .avdel{color:var(--danger);font-size:12px;cursor:pointer;background:none;border:0}
   #attframe{display:block;width:100%;height:calc(100vh - 150px);min-height:520px;border:0;background:transparent}
   .otlist{display:flex;flex-direction:column;gap:8px;margin:6px 0 4px}
   .otrow{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:14px}
@@ -284,6 +309,7 @@
         <div class="field"><label>月份</label><select id="fMonth" class="ctl"></select></div>
         <div class="field"><label>分類</label><select id="fCat" class="ctl"></select></div>
         <div class="field grow"><label>搜尋</label><input id="fSearch" class="ctl" placeholder="名稱 / 地址 / 講師 / 聯絡人"></div>
+        <button class="btn ghost" id="btnSched" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>講師排班工具</span></button>
         <button class="btn ghost" id="btnArchive" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg><span>封存區</span></button>
         <button class="btn" id="btnAdd">＋ 新增課程</button>
       </div>
@@ -330,6 +356,58 @@
         <div class="toolbar"><div class="grow"></div><button class="btn sm" id="btnAttEmpAdd">＋ 新增員工</button></div>
         <div id="attEmpForm" style="display:none"></div>
         <div class="card"><table class="full" id="attEmpTable"></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 講師排班工具 -->
+<div class="scrim" id="schedScrim">
+  <div class="modal" style="width:1080px">
+    <header>
+      <h3 style="display:flex;align-items:center;gap:14px">講師排班工具
+        <span style="display:inline-flex;align-items:center;gap:8px;font-weight:400">
+          <button class="iconbtn" id="schedPrev" title="上個月">‹</button>
+          <span id="schedLabel" style="min-width:96px;text-align:center;font-weight:600"></span>
+          <button class="iconbtn" id="schedNext" title="下個月">›</button>
+        </span>
+      </h3>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="btn sm" id="btnAvAdd">＋ 新增有空時段</button>
+        <button class="iconbtn" id="schedClose">✕</button>
+      </div>
+    </header>
+    <div class="mbody" style="padding:14px 16px">
+      <div class="sched-legend" id="schedLegend"></div>
+      <div class="sched-grid sched-head">
+        <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+      </div>
+      <div class="sched-grid" id="schedCal"></div>
+      <p class="hint" style="margin:12px 2px 0">空心＝有空（未標時段＝全日）；實心＝已排課。點空白處或「新增有空時段」可填寫；點課程方塊回到該課程。</p>
+    </div>
+  </div>
+</div>
+
+<!-- 新增/編輯講師有空時段 -->
+<div class="scrim" id="availScrim">
+  <div class="modal" style="width:720px">
+    <header><h3 id="availTitle">新增講師有空時段</h3><button class="iconbtn" id="availClose">✕</button></header>
+    <div class="mbody">
+      <div class="field" style="margin-bottom:12px"><label>講師</label>
+        <select id="avInstr" class="ctl" style="width:240px"></select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+        <button class="iconbtn" id="avPrev" title="上個月">‹</button>
+        <span id="avLabel" style="min-width:96px;text-align:center;font-weight:600"></span>
+        <button class="iconbtn" id="avNext" title="下個月">›</button>
+        <span class="hint" style="margin:0">點日期勾選（可多選）</span>
+      </div>
+      <div class="sched-grid sched-head av-head"><div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div></div>
+      <div class="av-grid" id="avCal"></div>
+      <div id="avList" style="margin-top:14px"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button class="btn ghost" id="avCancel">取消</button>
+        <button class="btn" id="avSave">儲存</button>
       </div>
     </div>
   </div>
@@ -1109,12 +1187,14 @@ function iso2d(s){ return s?String(s).slice(0,10).replace(/-/g,''):''; }
 
 /* DB → app */
 function mapCourseIn(r){ return {id:r.id,date:iso2d(r.course_date),category:r.category||'',name:r.name||'',address:r.address||'',contact:r.contact||'',note:r.note||'',links:r.links||{sheet:'',gear:''},instructors:Array.isArray(r.instructors)?r.instructors:[],assistants:Array.isArray(r.assistants)?r.assistants:[],sessions:(Array.isArray(r.sessions)&&r.sessions.length)?r.sessions:[{time:'',count:''}],progress:r.progress||{},active:r.active||{},billing:r.billing||{},archived:!!r.archived,lineSent:r.line_sent||''}; }
-function mapInstrIn(r){ return {id:r.id,name:r.name||'',userId:r.user_id||'',phone:r.phone||'',type:r.type||'內部'}; }
+function mapInstrIn(r){ return {id:r.id,name:r.name||'',userId:r.user_id||'',phone:r.phone||'',type:r.type||'內部',color:r.color||''}; }
 function mapCatIn(r){ return {_id:r.id,name:r.name||'',signin:!!r.signin,cert:!!r.cert,student:!!r.student,instr:!!r.instr,invoice:!!r.invoice,payment:!!r.payment}; }
 /* app → DB（順手補上缺失的 UUID） */
 function mapCourseOut(c){ if(!isUuid(c.id))c.id=uuid(); return {id:c.id,course_date:d2iso(c.date),category:c.category||'',name:c.name||'',address:c.address||'',contact:c.contact||'',note:c.note||'',links:c.links||{sheet:'',gear:''},instructors:c.instructors||[],assistants:c.assistants||[],sessions:c.sessions||[],progress:c.progress||{},active:c.active||{},billing:c.billing||{},archived:!!c.archived,line_sent:c.lineSent?new Date(c.lineSent).toISOString():null}; }
-function mapInstrOut(o,i){ if(!isUuid(o.id))o.id=uuid(); return {id:o.id,name:o.name||'',user_id:o.userId||null,phone:o.phone||null,type:o.type||'內部',sort:i}; }
+function mapInstrOut(o,i){ if(!isUuid(o.id))o.id=uuid(); return {id:o.id,name:o.name||'',user_id:o.userId||null,phone:o.phone||null,type:o.type||'內部',sort:i,color:o.color||null}; }
 function mapCatOut(o,i){ if(!isUuid(o._id))o._id=uuid(); return {id:o._id,name:o.name||'',sort:i,signin:!!o.signin,cert:!!o.cert,student:!!o.student,instr:!!o.instr,invoice:!!o.invoice,payment:!!o.payment}; }
+function mapAvailIn(r){ return {id:r.id,instructorId:r.instructor_id,date:iso2d(r.date),slots:Array.isArray(r.slots)?r.slots:[],note:r.note||''}; }
+function mapAvailOut(a){ if(!isUuid(a.id))a.id=uuid(); return {id:a.id,instructor_id:a.instructorId,date:d2iso(a.date),slots:a.slots||[],note:a.note||''}; }
 
 async function syncEntity(sb,table,rows){
   if(rows.length){ const {error}=await sb.from(table).upsert(rows,{onConflict:'id'}); if(error)throw error; }
@@ -1129,6 +1209,7 @@ async function syncAll(s){
     await syncEntity(sb,'courses',(s.courses||[]).map(mapCourseOut));
     await syncEntity(sb,'instructors',(s.instructors||[]).map(mapInstrOut));
     await syncEntity(sb,'categories',(s.categories||[]).map(mapCatOut));
+    await syncEntity(sb,'availability',(s.availability||[]).map(mapAvailOut));
     const {error}=await sb.from('settings').upsert({key:'app',value:s.settings||{}},{onConflict:'key'}); if(error)throw error;
   }catch(e){ console.warn('Supabase sync failed',e); try{toast&&toast('雲端同步失敗，已暫存本機');}catch(_){} }
 }
@@ -1139,17 +1220,19 @@ const DataStore={
     const sb=sbClient();
     if(sb){
       try{
-        const [cs,ins,cats,st]=await Promise.all([
+        const [cs,ins,cats,st,av]=await Promise.all([
           sb.from('courses').select('*').order('course_date'),
           sb.from('instructors').select('*').order('sort'),
           sb.from('categories').select('*').order('sort'),
-          sb.from('settings').select('value').eq('key','app').maybeSingle()
+          sb.from('settings').select('value').eq('key','app').maybeSingle(),
+          sb.from('availability').select('*').order('date')
         ]);
         if(cs.error||ins.error||cats.error) throw (cs.error||ins.error||cats.error);
         const s={
           courses:(cs.data||[]).map(mapCourseIn),
           instructors:(ins.data||[]).map(mapInstrIn),
           categories:(cats.data||[]).map(mapCatIn),
+          availability:(av&&!av.error&&av.data)?av.data.map(mapAvailIn):[],
           settings:(st&&st.data&&st.data.value)?st.data.value:{lineEndpoint:''}
         };
         supaLive=true;
@@ -1743,10 +1826,154 @@ function switchTab(name){
   if(name==='attsummary'){loadAttFrame();postAttRaw({type:'ATT_SHOW',page:'summary'});}
 }
 function openSettings(){renderInstructors();renderMatrix();$('#lineEndpoint').value=(S.settings&&S.settings.lineEndpoint)||'';attEmpRefresh();$('#setScrim').classList.add('show');}
+/* ===== 講師排班工具 ===== */
+const SLOT_LABEL={am:'上午',pm:'下午',eve:'晚上'};
+const SLOT_ORDER=['am','pm','eve'];
+let schedY,schedM;           // 主月曆顯示的年/月(0-based)
+let avY,avM;                 // 表單月曆
+let avInstrId=null;
+let avSel={};                // {YYYYMMDD:{slots:[],note:'',existingId:null}}
+let avDeletes=[];            // 既有 entryId 待刪除
+function instrById(id){return S.instructors.find(i=>i.id===id);}
+function ymLabel(y,m){return y+' 年 '+(m+1)+' 月';}
+function pad2(n){return String(n).padStart(2,'0');}
+function ymd(y,m,d){return ''+y+pad2(m+1)+pad2(d);}
+function slotsText(slots){if(!slots||!slots.length)return '';return '（'+slots.slice().sort((a,b)=>SLOT_ORDER.indexOf(a)-SLOT_ORDER.indexOf(b)).map(s=>SLOT_LABEL[s]).join('/')+'）';}
+
+function openSched(){const t=new Date();if(schedY==null){schedY=t.getFullYear();schedM=t.getMonth();}renderSchedLegend();renderSchedCal();$('#schedScrim').classList.add('show');}
+function closeSched(){$('#schedScrim').classList.remove('show');}
+function schedNav(d){schedM+=d;if(schedM<0){schedM=11;schedY--;}if(schedM>11){schedM=0;schedY++;}renderSchedCal();}
+
+function renderSchedLegend(){
+  const used=new Set();
+  S.instructors.forEach(i=>used.add(i.id));
+  $('#schedLegend').innerHTML=S.instructors.map(i=>`<span class="lg"><span class="sw" style="border-color:${i.color||'#999'};background:${i.color||'#999'}"></span>${esc(i.name)}</span>`).join('');
+}
+function renderSchedCal(){
+  $('#schedLabel').textContent=ymLabel(schedY,schedM);
+  const first=new Date(schedY,schedM,1);
+  const start=first.getDay();                 // 0=週日
+  const daysInMonth=new Date(schedY,schedM+1,0).getDate();
+  const prevDays=new Date(schedY,schedM,0).getDate();
+  const today=new Date();const todStr=ymd(today.getFullYear(),today.getMonth(),today.getDate());
+  let cells=[];
+  for(let i=0;i<start;i++){const d=prevDays-start+1+i;cells.push({d,other:true,date:null});}
+  for(let d=1;d<=daysInMonth;d++){cells.push({d,other:false,date:ymd(schedY,schedM,d)});}
+  while(cells.length%7!==0){const d=cells.length-(start+daysInMonth)+1;cells.push({d,other:true,date:null});}
+  $('#schedCal').innerHTML=cells.map(c=>{
+    if(c.other)return `<div class="sched-cell other"><div class="dnum">${c.d}</div></div>`;
+    const chips=[];
+    // 有空（空心）
+    S.availability.filter(a=>a.date===c.date).forEach(a=>{
+      const ins=instrById(a.instructorId);if(!ins)return;
+      const col=ins.color||'#999';
+      chips.push(`<div class="sched-chip hollow" style="border-color:${col};color:${col}" title="點擊編輯" onclick="event.stopPropagation();editAvail('${a.id}')">${esc(ins.name)}${esc(slotsText(a.slots))}</div>`);
+    });
+    // 已排課（實心）—只顯示名單內講師
+    S.courses.filter(co=>!co.archived&&co.date===c.date).forEach(co=>{
+      (co.instructors||[]).forEach(nm=>{
+        const ins=instrByName(nm);if(!ins)return;
+        const col=ins.color||'#666';
+        chips.push(`<div class="sched-chip solid" style="background:${col}" title="${esc(ins.name)}｜${esc(co.name||'')}" onclick="event.stopPropagation();gotoCourse('${co.id}')">${esc(co.name||'(未命名)')}</div>`);
+      });
+    });
+    const cls='sched-cell'+(c.date===todStr?' today':'');
+    return `<div class="${cls}" onclick="openAvailNew('${c.date}')"><div class="dnum">${c.d}</div>${chips.join('')}</div>`;
+  }).join('');
+}
+function gotoCourse(id){
+  closeSched();
+  const c=findCourse(id);if(!c){toast('找不到課程');return;}
+  if(archiveView)setArchiveView(false);
+  const ym=c.date.slice(0,4)+'-'+c.date.slice(4,6);
+  const sel=$('#fMonth');if(sel){const opt=[...sel.options].find(o=>o.value===ym);if(opt)sel.value=ym;}
+  const cat=$('#fCat');if(cat)cat.value='';const fs=$('#fSearch');if(fs)fs.value='';
+  renderCourses();setTimeout(()=>reopen(id),60);
+}
+
+/* --- 新增/編輯有空時段表單 --- */
+function fillAvInstr(){
+  $('#avInstr').innerHTML='<option value="">— 請選擇講師 —</option>'+S.instructors.map(i=>`<option value="${i.id}">${esc(i.name)}（${i.type}）</option>`).join('');
+  $('#avInstr').value=avInstrId||'';
+}
+function openAvailNew(preDate){
+  avInstrId=null;avSel={};avDeletes=[];
+  avY=schedY;avM=schedM;
+  if(preDate){avSel[preDate]={slots:[],note:'',existingId:null};}
+  $('#availTitle').textContent='新增講師有空時段';
+  fillAvInstr();renderAvCal();renderAvList();
+  $('#availScrim').classList.add('show');
+}
+function editAvail(entryId){
+  const a=S.availability.find(x=>x.id===entryId);if(!a)return;
+  avInstrId=a.instructorId;avSel={};avDeletes=[];
+  avY=parseInt(a.date.slice(0,4));avM=parseInt(a.date.slice(4,6))-1;
+  avSel[a.date]={slots:a.slots.slice(),note:a.note||'',existingId:a.id};
+  $('#availTitle').textContent='編輯講師有空時段';
+  fillAvInstr();renderAvCal();renderAvList();
+  $('#availScrim').classList.add('show');
+}
+function closeAvail(){$('#availScrim').classList.remove('show');}
+function avNav(d){avM+=d;if(avM<0){avM=11;avY--;}if(avM>11){avM=0;avY++;}renderAvCal();}
+function renderAvCal(){
+  $('#avLabel').textContent=ymLabel(avY,avM);
+  const first=new Date(avY,avM,1),start=first.getDay();
+  const dim=new Date(avY,avM+1,0).getDate(),prev=new Date(avY,avM,0).getDate();
+  let cells=[];
+  for(let i=0;i<start;i++)cells.push({d:prev-start+1+i,other:true,date:null});
+  for(let d=1;d<=dim;d++)cells.push({d,other:false,date:ymd(avY,avM,d)});
+  while(cells.length%7!==0){cells.push({d:cells.length,other:true,date:null});}
+  $('#avCal').innerHTML=cells.map(c=>{
+    if(c.other)return `<div class="av-cell other"></div>`;
+    const sel=avSel[c.date]?' sel':'';
+    return `<div class="av-cell${sel}" onclick="toggleAvDate('${c.date}')">${c.d}</div>`;
+  }).join('');
+}
+function toggleAvDate(date){
+  if(avSel[date]){
+    if(avSel[date].existingId){ if(!confirm('此日期已有資料，取消勾選將在儲存後刪除該筆，確定？'))return; avDeletes.push(avSel[date].existingId); }
+    delete avSel[date];
+  } else { avSel[date]={slots:[],note:'',existingId:null}; }
+  renderAvCal();renderAvList();
+}
+function renderAvList(){
+  const dates=Object.keys(avSel).sort();
+  if(!dates.length){$('#avList').innerHTML='<p class="hint" style="margin:6px 2px">尚未選擇日期。</p>';return;}
+  $('#avList').innerHTML=dates.map(dt=>{
+    const o=avSel[dt];const lbl=dt.slice(0,4)+'/'+dt.slice(4,6)+'/'+dt.slice(6,8);
+    const slots=SLOT_ORDER.map(s=>`<label class="slot"><input type="checkbox" ${o.slots.includes(s)?'checked':''} onchange="toggleAvSlot('${dt}','${s}',this.checked)">${SLOT_LABEL[s]}</label>`).join('');
+    return `<div class="av-row"><span class="avd">${lbl}</span>${slots}<input class="avnote" placeholder="備註（選填）" value="${esc(o.note)}" oninput="setAvNote('${dt}',this.value)"><button class="avdel" onclick="toggleAvDate('${dt}')">移除</button></div>`;
+  }).join('');
+}
+function toggleAvSlot(dt,s,on){const o=avSel[dt];if(!o)return;o.slots=o.slots.filter(x=>x!==s);if(on)o.slots.push(s);}
+function setAvNote(dt,v){if(avSel[dt])avSel[dt].note=v;}
+function saveAvail(){
+  if(!avInstrId){alert('請先選擇講師');return;}
+  if(avDeletes.length){const del=new Set(avDeletes);S.availability=S.availability.filter(a=>!del.has(a.id));}
+  Object.keys(avSel).forEach(dt=>{
+    const o=avSel[dt];
+    let a=S.availability.find(x=>x.instructorId===avInstrId&&x.date===dt);
+    if(a){a.slots=o.slots.slice();a.note=o.note||'';}
+    else{S.availability.push({id:uuid(),instructorId:avInstrId,date:dt,slots:o.slots.slice(),note:o.note||''});}
+  });
+  avDeletes=[];
+  persist();closeAvail();renderSchedCal();toast('已儲存有空時段');
+}
+
 function bindUI(){
   $('#tabs').addEventListener('click',e=>{if(e.target.dataset.tab)switchTab(e.target.dataset.tab);});
   $('#fMonth').onchange=$('#fCat').onchange=renderCourses;$('#fSearch').oninput=renderCourses;
   $('#btnArchive').onclick=()=>setArchiveView(!archiveView);
+  $('#btnSched').onclick=openSched;
+  $('#schedClose').onclick=closeSched;
+  $('#schedScrim').onclick=e=>{if(e.target.id==='schedScrim')closeSched();};
+  $('#schedPrev').onclick=()=>schedNav(-1);$('#schedNext').onclick=()=>schedNav(1);
+  $('#btnAvAdd').onclick=()=>openAvailNew(null);
+  $('#availClose').onclick=closeAvail;$('#avCancel').onclick=closeAvail;
+  $('#availScrim').onclick=e=>{if(e.target.id==='availScrim')closeAvail();};
+  $('#avPrev').onclick=()=>avNav(-1);$('#avNext').onclick=()=>avNav(1);
+  $('#avInstr').onchange=e=>{avInstrId=e.target.value||null;};
+  $('#avSave').onclick=saveAvail;
   $('#sMonth').onchange=$('#sArch').onchange=renderSalary;
   $('#btnAdd').onclick=addCourse;
   $('#btnSettings').onclick=openSettings;$('#setClose').onclick=()=>$('#setScrim').classList.remove('show');
@@ -1771,7 +1998,7 @@ function setArchiveView(v){archiveView=v;$('#btnArchive').innerHTML=(v?ICON_BACK
 async function boot(){
   S=await DataStore.load();
   if(!S||!S.courses){S=seedState();await DataStore.save(S);}
-  S.instructors=S.instructors||seedInstructors();S.categories=S.categories||seedCategories();
+  S.instructors=S.instructors||seedInstructors();S.categories=S.categories||seedCategories();S.availability=S.availability||[];
   S.courses=(S.courses||[]).map(c=>{
     c=Object.assign({progress:{},archived:false,lineSent:'',instructors:[],assistants:[],sessions:[{time:'',count:''}]},c);
     c.billing=Object.assign(newBilling(),c.billing||{});
