@@ -325,7 +325,6 @@
         <div class="field"><label>月份</label><select id="fMonth" class="ctl"></select></div>
         <div class="field"><label>分類</label><select id="fCat" class="ctl"></select></div>
         <div class="field grow"><label>搜尋</label><input id="fSearch" class="ctl" placeholder="名稱 / 地址 / 講師 / 聯絡人"></div>
-        <button class="btn ghost" id="btnAudit" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg><span>修改歷程</span></button>
         <button class="btn ghost" id="btnSched" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>講師排班工具</span></button>
         <button class="btn ghost" id="btnArchive" style="display:inline-flex;align-items:center;gap:6px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/><path d="M10 12h4"/></svg><span>封存區</span></button>
         <button class="btn" id="btnAdd">＋ 新增課程</button>
@@ -381,7 +380,7 @@
 <!-- 修改歷程 -->
 <div class="scrim" id="auditScrim">
   <div class="modal" style="width:640px;max-height:82vh">
-    <header><h3>修改歷程</h3><button class="iconbtn" id="auditClose">✕</button></header>
+    <header><h3 id="auditTitle">編輯紀錄</h3><button class="iconbtn" id="auditClose">✕</button></header>
     <div class="mbody" style="padding:8px 4px">
       <div id="auditList" style="max-height:64vh;overflow:auto"></div>
       <p class="hint" style="margin:10px 14px 4px">僅保留最近三個月的紀錄。</p>
@@ -1226,13 +1225,13 @@ function mapAvailOut(a){ if(!isUuid(a.id))a.id=uuid(); return {id:a.id,instructo
 function mapAuditIn(r){ return {id:r.id,at:r.at,actor:r.actor||'',action:r.action||'',entity:r.entity||'course',entityId:r.entity_id||null,summary:r.summary||''}; }
 
 /* ===== 修改歷程（audit log） ===== */
-const ACTION_LABEL={create:'新增課程',update:'修改課程',duplicate:'複製課程',archive:'封存課程',unarchive:'解除封存',delete:'刪除課程',line:'發送 LINE 通知',avail_save:'填寫有空時段',avail_delete:'刪除有空時段'};
+const ACTION_LABEL={create:'新增課程',update:'修改課程',duplicate:'複製課程',archive:'封存課程',unarchive:'解除封存',delete:'刪除課程',line:'發送 LINE 通知',progress_on:'完成進度',progress_off:'取消進度',avail_save:'填寫有空時段',avail_delete:'刪除有空時段'};
 function logAudit(action,entity,entityId,summary){
   const e={id:uuid(),at:new Date().toISOString(),actor:CURRENT_USER||'(未知)',action,entity:entity||'course',entityId:entityId||null,summary:summary||''};
   S.audit=S.audit||[]; S.audit.unshift(e); if(S.audit.length>800)S.audit.length=800;
   const sb=sbClient();
   if(sb&&supaLive){ try{ sb.from('audit_log').insert({id:e.id,at:e.at,actor:e.actor,action:e.action,entity:e.entity,entity_id:e.entityId,summary:e.summary}).then(()=>{},()=>{}); }catch(_){} }
-  if(e.entity==='course'&&e.entityId){ const card=document.querySelector(`.course[data-id="${e.entityId}"]`); if(card){const h=card.querySelector('.course-hist'); if(h)h.outerHTML=courseHistHTML(e.entityId);} }
+  if(e.entity==='course'&&e.entityId&&_auditCourseId===e.entityId){ try{renderCourseAudit();}catch(_){} }
 }
 /* 課程欄位編輯採防抖：連續打字只記一筆「修改」 */
 const _auditEditTimers={}; const _justCreated={};
@@ -1256,13 +1255,15 @@ function actorShort(a){ if(!a)return '(未知)'; const at=a.indexOf('@'); return
 function fmtStampFull(iso){
   try{const d=new Date(iso);return (d.getMonth()+1)+'/'+d.getDate()+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}catch(e){return '';}
 }
-const AUDIT_DOT={create:'#1B7A4B',update:'#37668A',duplicate:'#8C7BB0',archive:'#B08A3E',unarchive:'#B08A3E',delete:'#C0453B',line:'#2E9E8F',avail_save:'#7E91A6',avail_delete:'#C0453B'};
-function openAudit(){renderAudit();$('#auditScrim').classList.add('show');}
-function closeAudit(){$('#auditScrim').classList.remove('show');}
-function renderAudit(){
-  const list=(S.audit||[]).slice(0,300);
-  if(!list.length){$('#auditList').innerHTML='<div class="empty-hint" style="padding:26px;text-align:center">目前沒有修改紀錄。</div>';return;}
-  // 依日期分組
+const AUDIT_DOT={create:'#1B7A4B',update:'#37668A',duplicate:'#8C7BB0',archive:'#B08A3E',unarchive:'#B08A3E',delete:'#C0453B',line:'#2E9E8F',progress_on:'#1B7A4B',progress_off:'#B08A3E',avail_save:'#7E91A6',avail_delete:'#C0453B'};
+let _auditCourseId=null;
+function openCourseAudit(id){_auditCourseId=id;renderCourseAudit();$('#auditScrim').classList.add('show');}
+function closeAudit(){_auditCourseId=null;$('#auditScrim').classList.remove('show');}
+function renderCourseAudit(){
+  const id=_auditCourseId, c=findCourse(id);
+  const t=$('#auditTitle'); if(t)t.textContent=(c?(c.name||'(未命名)'):'')+'　編輯紀錄';
+  const list=(S.audit||[]).filter(e=>e.entityId===id && e.entity==='course');
+  if(!list.length){$('#auditList').innerHTML='<div class="empty-hint" style="padding:26px;text-align:center">這堂課目前沒有編輯紀錄。</div>';return;}
   let html='',lastDay='';
   list.forEach(e=>{
     const d=new Date(e.at);const day=(d.getMonth()+1)+' 月 '+d.getDate()+' 日';
@@ -1498,7 +1499,8 @@ function crowInner(c){
 function updateHeader(id){const card=document.querySelector(`.course[data-id="${id}"]`);const c=findCourse(id);if(!card||!c)return;const el=card.querySelector('.crow');if(el)el.innerHTML=crowInner(c);const f=courseFlags(c);card.classList.toggle('thisweek',isThisWeek(c.date));card.classList.toggle('warn-remind',f.remind);card.classList.toggle('warn-incomplete',!f.remind&&f.incomplete);const ttl=flagTitle(f);if(ttl)card.setAttribute('title',ttl);else card.removeAttribute('title');}
 function toggleCourse(id){document.querySelector(`.course[data-id="${id}"]`)?.classList.toggle('open');}
 function rebuildBody(id){const el=document.querySelector(`.course[data-id="${id}"] .cbody`);const c=findCourse(id);if(el&&c)el.innerHTML=courseBodyHTML(c);}
-function toggleNode(id,key){const c=findCourse(id);c.active=c.active||{};c.progress=c.progress||{};if(!c.active[key])return;c.progress[key]=!c.progress[key];persist();updateHeader(id);}
+function nodeLabel(key){const n=NODE_DEFS.find(x=>x.key===key);return n?n.label:key;}
+function toggleNode(id,key){const c=findCourse(id);c.active=c.active||{};c.progress=c.progress||{};if(!c.active[key])return;c.progress[key]=!c.progress[key];persist();updateHeader(id);logAudit(c.progress[key]?'progress_on':'progress_off','course',isUuid(c.id)?c.id:null,nodeLabel(key));}
 function toggleNodeActive(id,key,v){const c=findCourse(id);c.active=c.active||{};c.progress=c.progress||{};c.active[key]=v;if(!v)c.progress[key]=false;persist();updateHeader(id);}
 
 function courseBodyHTML(c){
@@ -1540,12 +1542,8 @@ function courseBodyHTML(c){
     <button class="btn ghost sm" onclick="duplicateCourse('${c.id}')">複製課程</button>
     <button class="btn ghost sm" onclick="toggleArchive('${c.id}')">${c.archived?'解除封存':'封存課程'}</button>
     <button class="btn ghost sm" style="color:var(--danger)" onclick="deleteCourse('${c.id}')">刪除</button>
-  </div>${courseHistHTML(c.id)}</div>`;
-}
-function courseHistHTML(id){
-  const items=(S.audit||[]).filter(e=>e.entityId===id && e.entity==='course').slice(0,8);
-  const rows=items.map(e=>`<div class="ch-row"><span class="ch-time">${esc(fmtStamp(e.at))}</span><span class="ch-actor">${esc(actorShort(e.actor))}</span><span class="ch-act">${esc(ACTION_LABEL[e.action]||e.action)}</span></div>`).join('');
-  return `<div class="course-hist"><div class="ch-title">編輯紀錄</div>${rows||'<div class="ch-empty">尚無編輯紀錄</div>'}</div>`;
+    <button class="btn ghost sm hist-btn" style="margin-left:auto" onclick="openCourseAudit('${c.id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l3 2"/></svg>編輯紀錄</button>
+  </div></div>`;
 }
 
 /* ----- inline field edits (focus-safe: only header re-renders) ----- */
@@ -2126,7 +2124,6 @@ function bindUI(){
   $('#fMonth').onchange=$('#fCat').onchange=renderCourses;$('#fSearch').oninput=renderCourses;
   $('#btnArchive').onclick=()=>setArchiveView(!archiveView);
   $('#btnSched').onclick=openSched;
-  $('#btnAudit').onclick=openAudit;
   $('#auditClose').onclick=closeAudit;
   $('#auditScrim').onclick=e=>{if(e.target.id==='auditScrim')closeAudit();};
   $('#schedClose').onclick=closeSched;
