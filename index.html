@@ -98,7 +98,7 @@
   .linkbtn.addgear{color:#1B7A4B;border-style:dashed}
   .linkbtn.addgear:hover{background:#EAF5EE;border-color:#1B7A4B}
   .link-hint{font-size:11px;color:var(--ink-2);margin-top:5px}
-  .link-hint a{color:#1B7A4B;font-weight:600;text-decoration:none}
+  .link-hint a{color:#37668A;font-weight:600;text-decoration:none}
   .link-hint a:hover{text-decoration:underline}
   .linkgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
   .linebtn:hover{border-color:#06C755;color:#06C755}
@@ -165,6 +165,12 @@
   .cactions{display:flex;flex-wrap:wrap;gap:8px}
   .lastedit{margin-top:10px;font-size:12px;color:var(--ink-2)}
   .lastedit b{color:var(--ink)}
+  .course-hist{margin-top:14px;margin-left:auto;width:max-content;max-width:360px;border-top:1px solid var(--line);padding-top:8px}
+  .course-hist .ch-title{font-size:11px;font-weight:700;color:var(--ink-2);margin-bottom:4px;text-align:right}
+  .course-hist .ch-row{display:flex;gap:10px;justify-content:flex-end;font-size:12px;color:var(--ink-2);padding:1px 0}
+  .course-hist .ch-time{font-variant-numeric:tabular-nums}
+  .course-hist .ch-actor{font-weight:600;color:var(--ink)}
+  .course-hist .ch-empty{font-size:12px;color:var(--ink-2);text-align:right}
   .audit-day{position:sticky;top:0;background:#fff;font-size:12px;font-weight:700;color:var(--ink-2);padding:8px 14px 4px}
   .audit-row{display:flex;align-items:baseline;gap:8px;padding:6px 14px;font-size:13px;border-bottom:1px solid #F0F2F4}
   .audit-dot{flex:0 0 auto;width:8px;height:8px;border-radius:50%;align-self:center}
@@ -1226,6 +1232,7 @@ function logAudit(action,entity,entityId,summary){
   S.audit=S.audit||[]; S.audit.unshift(e); if(S.audit.length>800)S.audit.length=800;
   const sb=sbClient();
   if(sb&&supaLive){ try{ sb.from('audit_log').insert({id:e.id,at:e.at,actor:e.actor,action:e.action,entity:e.entity,entity_id:e.entityId,summary:e.summary}).then(()=>{},()=>{}); }catch(_){} }
+  if(e.entity==='course'&&e.entityId){ const card=document.querySelector(`.course[data-id="${e.entityId}"]`); if(card){const h=card.querySelector('.course-hist'); if(h)h.outerHTML=courseHistHTML(e.entityId);} }
 }
 /* 課程欄位編輯採防抖：連續打字只記一筆「修改」 */
 const _auditEditTimers={}; const _justCreated={};
@@ -1533,12 +1540,12 @@ function courseBodyHTML(c){
     <button class="btn ghost sm" onclick="duplicateCourse('${c.id}')">複製課程</button>
     <button class="btn ghost sm" onclick="toggleArchive('${c.id}')">${c.archived?'解除封存':'封存課程'}</button>
     <button class="btn ghost sm" style="color:var(--danger)" onclick="deleteCourse('${c.id}')">刪除</button>
-  </div>${lastEditLine(c.id)}</div>`;
+  </div>${courseHistHTML(c.id)}</div>`;
 }
-function lastEditLine(id){
-  const e=lastEditInfo(id);
-  if(!e)return '';
-  return `<div class="lastedit">最後由 <b>${esc(actorShort(e.actor))}</b> 於 ${esc(fmtStamp(e.at))} ${esc(ACTION_LABEL[e.action]||e.action)}</div>`;
+function courseHistHTML(id){
+  const items=(S.audit||[]).filter(e=>e.entityId===id && e.entity==='course').slice(0,8);
+  const rows=items.map(e=>`<div class="ch-row"><span class="ch-time">${esc(fmtStamp(e.at))}</span><span class="ch-actor">${esc(actorShort(e.actor))}</span><span class="ch-act">${esc(ACTION_LABEL[e.action]||e.action)}</span></div>`).join('');
+  return `<div class="course-hist"><div class="ch-title">編輯紀錄</div>${rows||'<div class="ch-empty">尚無編輯紀錄</div>'}</div>`;
 }
 
 /* ----- inline field edits (focus-safe: only header re-renders) ----- */
