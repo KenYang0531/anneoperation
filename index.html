@@ -1562,7 +1562,7 @@ function courseFlags(c){
     if(!String(c.name||'').trim()||!String(c.address||'').trim()||!(c.instructors&&c.instructors.length)
        ||!(c.sessions&&c.sessions.length)||(c.sessions||[]).some(s=>!String(s.time||'').trim()||!String(s.count||'').trim()))dataMissing=true;
     // 請款／人事費：需請款的課程（分類含發票或款項）三個管道不能都沒勾
-    if((a.invoice||a.payment)&&!(b.company||b.assoc||b.labor))billMissing=true;
+    if(!(b.company||b.assoc||b.labor))billMissing=true;
   }
   return {remind,dataMissing,billMissing,incomplete:dataMissing||billMissing};
 }
