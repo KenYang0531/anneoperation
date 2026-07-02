@@ -714,9 +714,9 @@ const MEMSS={_d:{},getItem(k){return (k in this._d)?this._d[k]:null;},setItem(k,
 // 登入密碼，存在 MEMLS，關閉分頁後需重新輸入
 const APP_PASSWORD = 'saveanne';
 
-// Supabase 設定
-const SUPA_URL = '';
-const SUPA_KEY = '';
+// Supabase 設定（operation 資料庫）
+const SUPA_URL = 'https://jpuzhjnsggxlkfrvyaem.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpwdXpoam5zZ2d4bGtmcnZ5YWVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIzNzMyMTgsImV4cCI6MjA5Nzk0OTIxOH0.RozagkYzg6YyahjNypZRy7TLhzLZeTXSgtq5s_p7_So';
 
 // ══════════════════════════════════════════
 // ── 登入邏輯 ──
@@ -1137,17 +1137,117 @@ function setStatus(msg,isErr){
 const _debouncers={};
 function debounce(id,fn,delay=800){clearTimeout(_debouncers[id]);_debouncers[id]=setTimeout(fn,delay);}
 
-async function loadData(){
-  if(!emps.length) seedEmps();
-  render();
-  setStatus('靜態測試模式（未連線資料庫）');
+// ── 邊界轉換：資料庫用 0 代表「未填」，前端用 null 代表「未填」 ──
+function z(v){return (v===0||v===null||v===undefined||v==='')?null:+v;}   // DB → 前端
+function nz(v){return (v===null||v===undefined||v==='')?0:+v;}            // 前端 → DB
+function supaCfg(){return !!(SUPA_URL&&SUPA_KEY);}
+ 
+// PostgREST 分頁抓取（避免單次查詢被 max-rows 截斷）
+async function supaSelectAll(path){
+  const rows=[],size=1000; let from=0;
+  while(true){
+    const res=await fetch(SUPA_URL+'/rest/v1/'+path,{headers:supaHeaders({'Range-Unit':'items','Range':from+'-'+(from+size-1)})});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const batch=await res.json();
+    rows.push(...batch);
+    if(!Array.isArray(batch)||batch.length<size) break;
+    from+=size;
+  }
+  return rows;
 }
-
-async function apiSetAtt(key,val){}
-
-async function apiSaveEmp(emp){}
-
-async function apiDelEmp(id){}
+ 
+async function loadData(){
+  if(!supaCfg()){
+    if(!emps.length) seedEmps();
+    render(); postEmps();
+    setStatus('未設定資料庫連線，暫用離線資料',true);
+    return;
+  }
+  try{
+    const [empRows,attRows]=await Promise.all([
+      supaSelectAll('employees?select=id,name,joinDate,classMax,compBal&order=id.asc'),
+      supaSelectAll('attendance?select=att_key,leave,checkin,checkout,breaktime')
+    ]);
+    emps=(empRows||[]).map(r=>({id:+r.id,name:r.name||'',joinDate:r.joinDate||'',classMax:+r.classMax||0,compBal:+r.compBal||0}));
+    nid=emps.reduce((mx,e)=>Math.max(mx,e.id),0)+1;
+    att={};
+    (attRows||[]).forEach(r=>{
+      if(!r.att_key)return;
+      att[r.att_key]={leave:r.leave||'',inH:z(r.checkin),outH:z(r.checkout),brk:z(r.breaktime)};
+    });
+    render(); postEmps();
+    setStatus('已從資料庫載入（'+emps.length+' 位員工）');
+  }catch(e){
+    if(!emps.length) seedEmps();
+    render(); postEmps();
+    setStatus('無法連線資料庫，暫用離線資料：'+(e.message||e),true);
+  }
+}
+ 
+// 差勤紀錄：以 att_key 為唯一鍵 upsert（連續輸入以防抖合併）
+function apiSetAtt(key,val){
+  if(!supaCfg()) return;
+  debounce('att:'+key,async()=>{
+    try{
+      const rec=att[key]||val||{};
+      const body={att_key:key,leave:(rec.leave||null),checkin:nz(rec.inH),checkout:nz(rec.outH),breaktime:nz(rec.brk)};
+      const res=await fetch(SUPA_URL+'/rest/v1/attendance?on_conflict=att_key',{
+        method:'POST',
+        headers:supaHeaders({'Prefer':'resolution=merge-duplicates,return=minimal'}),
+        body:JSON.stringify(body)
+      });
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      setStatus('已儲存');
+    }catch(e){ setStatus('儲存失敗：'+(e.message||e),true); }
+  },450);
+}
+ 
+// 新增員工：由資料庫產生 id，回填本地（新員工尚無差勤，可安全換 id）
+async function apiInsertEmp(f){
+  const local={id:nid++,name:f.name,joinDate:f.joinDate,classMax:+f.classMax||0,compBal:+f.compBal||0};
+  emps.push(local); render(); postEmps();
+  if(!supaCfg()){ setStatus('離線：員工未同步至資料庫',true); return; }
+  try{
+    const res=await fetch(SUPA_URL+'/rest/v1/employees',{
+      method:'POST',
+      headers:supaHeaders({'Prefer':'return=representation'}),
+      body:JSON.stringify({name:local.name,joinDate:local.joinDate,classMax:local.classMax,compBal:local.compBal})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const row=(await res.json())[0];
+    if(row&&row.id!=null){ local.id=+row.id; if(local.id>=nid) nid=local.id+1; render(); postEmps(); }
+    setStatus('已新增員工');
+  }catch(e){ setStatus('新增員工失敗：'+(e.message||e),true); }
+}
+ 
+// 更新既有員工
+async function apiSaveEmp(emp){
+  if(!supaCfg()) return;
+  try{
+    const res=await fetch(SUPA_URL+'/rest/v1/employees?id=eq.'+encodeURIComponent(emp.id),{
+      method:'PATCH',
+      headers:supaHeaders({'Prefer':'return=minimal'}),
+      body:JSON.stringify({name:emp.name,joinDate:emp.joinDate,classMax:+emp.classMax||0,compBal:+emp.compBal||0})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    setStatus('已更新員工');
+  }catch(e){ setStatus('更新員工失敗：'+(e.message||e),true); }
+}
+ 
+// 刪除員工：同時刪除其所有差勤紀錄（att_key 以 `id-` 開頭）
+async function apiDelEmp(id){
+  if(!supaCfg()) return;
+  try{
+    await fetch(SUPA_URL+'/rest/v1/attendance?att_key=like.'+encodeURIComponent(id+'-*'),{
+      method:'DELETE',headers:supaHeaders({'Prefer':'return=minimal'})
+    });
+    const res=await fetch(SUPA_URL+'/rest/v1/employees?id=eq.'+encodeURIComponent(id),{
+      method:'DELETE',headers:supaHeaders({'Prefer':'return=minimal'})
+    });
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    setStatus('已刪除員工');
+  }catch(e){ setStatus('刪除員工失敗：'+(e.message||e),true); }
+}
 
 // ══════════════════════════════════════════
 // ── 啟動 ──
@@ -1168,8 +1268,11 @@ window.addEventListener('message',function(ev){
   const d=ev.data||{};
   if(d.type==='ATT_SHOW'){ showPage(d.page||'schedule'); return; }
   if(d.type==='ATT_GET_EMPS'){ postEmps(); return; }
-  if(d.type==='ATT_EMP_SAVE'){ const e=d.emp||{}; if(e.id!=null){const x=emps.find(z=>z.id===e.id); if(x){x.name=e.name;x.joinDate=e.joinDate;x.classMax=e.classMax||0;x.compBal=e.compBal||0;}} else {emps.push({id:nid++,name:e.name,joinDate:e.joinDate,classMax:e.classMax||0,compBal:e.compBal||0});} render(); postEmps(); return; }
-  if(d.type==='ATT_EMP_DELETE'){ emps=emps.filter(z=>z.id!==d.id); render(); postEmps(); return; }
+  if(d.type==='ATT_EMP_SAVE'){ const e=d.emp||{};
+    if(e.id!=null){ const x=emps.find(q=>q.id===e.id); if(x){x.name=e.name;x.joinDate=e.joinDate;x.classMax=e.classMax||0;x.compBal=e.compBal||0; render(); postEmps(); apiSaveEmp(x);} }
+    else { apiInsertEmp({name:e.name,joinDate:e.joinDate,classMax:e.classMax||0,compBal:e.compBal||0}); }
+    return; }
+  if(d.type==='ATT_EMP_DELETE'){ Object.keys(att).forEach(k=>{ if(k.indexOf(d.id+'-')===0) delete att[k]; }); emps=emps.filter(q=>q.id!==d.id); render(); postEmps(); apiDelEmp(d.id); return; }
   if(d.type==='ATT_SEED'){ if(Array.isArray(d.emps)&&d.emps.length){ emps=d.emps.map((e,i)=>({id:i+1,name:e.name,joinDate:e.joinDate||'',classMax:+e.classMax||0,compBal:+e.compBal||0})); nid=emps.length+1; render(); postEmps(); } return; }
   if(d.type==='ATT_OT'){
     const emp=emps.find(e=>e.name===d.name);
