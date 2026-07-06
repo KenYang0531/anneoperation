@@ -1382,22 +1382,129 @@ function renderCourseAudit(){
   $('#auditList').innerHTML=html;
 }
 
-async function syncEntity(sb,table,rows){
-  if(rows.length){ const {error}=await sb.from(table).upsert(rows,{onConflict:'id'}); if(error)throw error; }
-  const {data:ex,error:e2}=await sb.from(table).select('id'); if(e2)throw e2;
-  const keep=new Set(rows.map(r=>r.id));
-  const gone=(ex||[]).map(x=>x.id).filter(id=>!keep.has(id));
-  if(gone.length){ const {error:e3}=await sb.from(table).delete().in('id',gone); if(e3)throw e3; }
+/* === 版本檢查 + 欄位級合併同步（修正多人覆寫問題） ===
+   舊版：每次存檔把整份名單 upsert，並刪掉 DB 裡本機沒有的列。
+        → 任何人（即使只是改課程）一存檔，就會用記憶體裡的舊名單整包蓋回 DB，洗掉別人剛填的 LINE userId。
+   新版：
+     1) 以 _syncBaseline（本機認定的 DB 現況）為基準，只推送「這台裝置實際改動過的列」。
+     2) 每列帶 updated_at 版本條件更新：只寫「我這次真的改到的欄位」。
+     3) 若送出時版本對不上（別人已改過同一列）：
+          - 別人動的是不同欄位 → 自動合併（各留各的）
+          - 別人動的是同一欄位且值不同 → 跳出提示，由使用者選擇要覆蓋或保留。 */
+let _syncBaseline=null;
+const _dbMeta={courses:{},instructors:{},categories:{},availability:{}};   // id -> updated_at
+function _rowsById(rows){ const m={}; (rows||[]).forEach(r=>{ if(r&&r.id!=null) m[r.id]=r; }); return m; }
+function _eq(a,b){ return JSON.stringify(a)===JSON.stringify(b); }
+function _changedFields(prevRow,nextRow){
+  const f=[], keys=new Set([...Object.keys(prevRow||{}),...Object.keys(nextRow||{})]);
+  keys.forEach(k=>{ if(k==='id'||k==='updated_at'||k==='created_at')return;
+    if(!_eq(prevRow?prevRow[k]:undefined, nextRow?nextRow[k]:undefined)) f.push(k); });
+  return f;
+}
+const FIELD_LABELS={name:'姓名',user_id:'LINE userId',phone:'電話',type:'屬性',sort:'排序',color:'顏色',
+  course_date:'日期',category:'分類',address:'地址',contact:'聯絡人',note:'備註',note2:'備註2',
+  instructors:'講師',assistants:'助教',sessions:'梯次',billing:'費用',links:'連結',progress:'進度',
+  active:'啟用方塊',archived:'封存',line_sent:'LINE通知時間',slots:'有空時段',
+  signin:'簽到表',cert:'證照',student:'學生提醒',instr:'講師提醒',invoice:'發票',payment:'款項'};
+function _rowName(table,id){
+  try{
+    if(table==='instructors'){const x=(S.instructors||[]).find(r=>r.id===id);return x?(x.name||id):id;}
+    if(table==='courses'){const x=(S.courses||[]).find(r=>r.id===id);return x?(x.name||'(未命名課程)'):id;}
+    if(table==='categories'){const x=(S.categories||[]).find(r=>r._id===id);return x?(x.name||id):id;}
+  }catch(_){}
+  return id;
+}
+function _fmtVal(v){ if(v===null||v===undefined||v==='')return '(空)'; return (typeof v==='object')?JSON.stringify(v):String(v); }
+/* 同一欄位真衝突 → 問使用者。回傳 true=用我的值覆蓋，false=保留別人的值 */
+function _askFieldConflict(table,id,key){
+  const args=arguments, theirVal=args[3], myVal=args[4];
+  const lab=FIELD_LABELS[key]||key, nm=_rowName(table,id);
+  try{
+    return window.confirm(
+      `同時編輯衝突：「${nm}」的「${lab}」\n\n`+
+      `別人已存的值：${_fmtVal(theirVal)}\n`+
+      `你的值：${_fmtVal(myVal)}\n\n`+
+      `按「確定」＝用你的值覆蓋；按「取消」＝保留別人的值。`);
+  }catch(_){ return false; }   // 無法詢問時，保守保留別人的值
+}
+/* 物件型欄位（整包存在同一個 JSON 欄位裡）→ 衝突時改用「子項目層級」合併：
+   不同子項各留各的，只有同一子項被兩人改成不同值才跳提示。 */
+const OBJ_MERGE_FIELDS=new Set(['progress','active','billing','links']);
+function _isPlainObj(v){ return v&&typeof v==='object'&&!Array.isArray(v); }
+function _subLabel(sk){ try{ return nodeLabel(sk); }catch(_){ return sk; } }
+function _deepMergeField(table,id,key,baseObj,myObj,dbObj){
+  const merged=JSON.parse(JSON.stringify(dbObj||{}));   // 以 DB 現況為底，保留別人所有子項
+  const keys=new Set([...Object.keys(baseObj||{}),...Object.keys(myObj||{})]);
+  keys.forEach(sk=>{
+    const b=baseObj?baseObj[sk]:undefined, m=myObj?myObj[sk]:undefined, d=dbObj?dbObj[sk]:undefined;
+    if(_eq(b,m))       return;              // 我沒改這個子項 → 保留 DB 的
+    if(_eq(d,b))     { merged[sk]=m; return; }  // 別人沒動這子項 → 用我的
+    if(_eq(d,m))       return;              // 別人已改成跟我一樣
+    const lab=(FIELD_LABELS[key]||key)+'：'+_subLabel(sk);   // 同一子項真衝突 → 問使用者
+    if(_askFieldConflict(table,id,lab,d,m)) merged[sk]=m;    // 覆蓋；否則保留 DB 的
+  });
+  return merged;
+}
+async function syncEntityVersioned(sb,table,prevMapped,nextMapped){
+  const prev=_rowsById(prevMapped), next=_rowsById(nextMapped);
+  const meta=_dbMeta[table]||(_dbMeta[table]={});
+  for(const id in next){
+    const nrow=next[id], prow=prev[id];
+    if(!prow || meta[id]==null){                      // 新增（或本機沒有版本資訊）→ upsert 整列
+      const {data,error}=await sb.from(table).upsert(nrow,{onConflict:'id'}).select().maybeSingle();
+      if(error)throw error; if(data&&data.updated_at)meta[id]=data.updated_at; continue;
+    }
+    const fields=_changedFields(prow,nrow);
+    if(!fields.length)continue;                        // 這列沒改
+    const patch={}; fields.forEach(k=>patch[k]=nrow[k]);
+    let {data,error}=await sb.from(table).update(patch).eq('id',id).eq('updated_at',meta[id]).select();
+    if(error)throw error;
+    if(data&&data.length===1){ meta[id]=data[0].updated_at; continue; }   // 版本相符，成功
+    /* 版本對不上 → 別人已改過這列，逐欄合併 */
+    const cur=await sb.from(table).select('*').eq('id',id).maybeSingle();
+    if(cur.error)throw cur.error;
+    if(!cur.data){ delete meta[id]; continue; }        // 該列已被刪除，略過
+    const dbRow=cur.data, applyPatch={};
+    for(const k of fields){
+      const baseVal=prow[k], myVal=nrow[k], dbVal=dbRow[k];
+      if(_eq(dbVal,baseVal))      applyPatch[k]=myVal; // 別人沒動這欄 → 用我的
+      else if(_eq(dbVal,myVal))   {}                   // 別人已改成跟我一樣 → 不用動
+      else if(OBJ_MERGE_FIELDS.has(k)&&_isPlainObj(baseVal)&&_isPlainObj(myVal)&&_isPlainObj(dbVal)){
+        const merged=_deepMergeField(table,id,k,baseVal,myVal,dbVal);   // 物件型 → 子項合併
+        if(!_eq(merged,dbVal)) applyPatch[k]=merged;                    // 有變才寫，避免無謂更新
+      }
+      else if(_askFieldConflict(table,id,k,dbVal,myVal)) applyPatch[k]=myVal;  // 一般欄位同欄衝突，選覆蓋
+      /* 否則保留別人的值（不寫入該欄） */
+    }
+    if(Object.keys(applyPatch).length){
+      const r2=await sb.from(table).update(applyPatch).eq('id',id).eq('updated_at',dbRow.updated_at).select();
+      if(r2.error)throw r2.error;
+      if(r2.data&&r2.data.length===1){ meta[id]=r2.data[0].updated_at; }
+      else throw new Error('版本再次衝突：'+table+'/'+id);   // 合併中又被改 → 交給重試
+    } else { meta[id]=dbRow.updated_at; }
+  }
+  /* 刪除：只刪「本機真的移除」的列 */
+  const removed=[]; for(const id in prev){ if(!next[id])removed.push(id); }
+  if(removed.length){ const {error}=await sb.from(table).delete().in('id',removed); if(error)throw error;
+    removed.forEach(id=>delete meta[id]); }
 }
 async function syncAll(s){
   const sb=sbClient(); if(!sb||!supaLive)return;
+  const base=_syncBaseline||{};
   try{
-    await syncEntity(sb,'courses',(s.courses||[]).map(mapCourseOut));
-    await syncEntity(sb,'instructors',(s.instructors||[]).map(mapInstrOut));
-    await syncEntity(sb,'categories',(s.categories||[]).map(mapCatOut));
-    await syncEntity(sb,'availability',(s.availability||[]).map(mapAvailOut));
-    const {error}=await sb.from('settings').upsert({key:'app',value:s.settings||{}},{onConflict:'key'}); if(error)throw error;
-  }catch(e){ console.warn('Supabase sync failed',e); try{toast&&toast('雲端同步失敗，已暫存本機');}catch(_){} }
+    await syncEntityVersioned(sb,'courses',(base.courses||[]).map(mapCourseOut),(s.courses||[]).map(mapCourseOut));
+    await syncEntityVersioned(sb,'instructors',(base.instructors||[]).map(mapInstrOut),(s.instructors||[]).map(mapInstrOut));
+    await syncEntityVersioned(sb,'categories',(base.categories||[]).map(mapCatOut),(s.categories||[]).map(mapCatOut));
+    await syncEntityVersioned(sb,'availability',(base.availability||[]).map(mapAvailOut),(s.availability||[]).map(mapAvailOut));
+    if(JSON.stringify(base.settings||{})!==JSON.stringify(s.settings||{})){
+      const {error}=await sb.from('settings').upsert({key:'app',value:s.settings||{}},{onConflict:'key'}); if(error)throw error;
+    }
+    _syncBaseline=JSON.parse(JSON.stringify(s));   // 只有整批成功才更新基準
+  }catch(e){
+    console.warn('Supabase sync failed',e);
+    try{toast&&toast('雲端同步失敗，將自動重試…');}catch(_){}
+    clearTimeout(_syncTimer); _syncTimer=setTimeout(()=>syncAll(S),5000);   // 失敗自動重試，基準不變
+  }
 }
 
 const DataStore={
@@ -1425,9 +1532,15 @@ const DataStore={
           settings:(st&&st.data&&st.data.value)?st.data.value:{lineEndpoint:''}
         };
         supaLive=true;
+        /* 記錄每列的版本（updated_at），供存檔時做樂觀鎖比對 */
+        _dbMeta.courses={};      (cs.data||[]).forEach(r=>{ if(r.id)_dbMeta.courses[r.id]=r.updated_at; });
+        _dbMeta.instructors={};  (ins.data||[]).forEach(r=>{ if(r.id)_dbMeta.instructors[r.id]=r.updated_at; });
+        _dbMeta.categories={};   (cats.data||[]).forEach(r=>{ if(r.id)_dbMeta.categories[r.id]=r.updated_at; });
+        _dbMeta.availability={}; ((av&&av.data)||[]).forEach(r=>{ if(r.id)_dbMeta.availability[r.id]=r.updated_at; });
         /* 清除超過三個月的歷程（背景執行，不影響載入） */
         try{ sb.from('audit_log').delete().lt('at',cutoff).then(()=>{},()=>{}); }catch(e){}
         this.mem=JSON.parse(JSON.stringify(s));
+        _syncBaseline=JSON.parse(JSON.stringify(s));   // 差異同步基準＝剛從雲端載入的狀態
         try{if(window.storage)await window.storage.set(STORE_KEY,JSON.stringify(s));}catch(e){}
         try{toast&&toast('已從雲端載入');}catch(e){}
         return s;
