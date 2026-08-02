@@ -1159,6 +1159,8 @@ function debounce(id,fn,delay=800){clearTimeout(_debouncers[id]);_debouncers[id]
 // ── 邊界轉換：資料庫用 0 代表「未填」，前端用 null 代表「未填」 ──
 function z(v){return (v===0||v===null||v===undefined||v==='')?null:+v;}   // DB → 前端
 function nz(v){return (v===null||v===undefined||v==='')?0:+v;}            // 前端 → DB
+function bzLoad(v){return v===-1?0:z(v);}   // 休息時間 DB→前端：-1 代表「明確填 0（無休息）」，其餘沿用 z（0→預設）
+function bzSave(v){return v===0?-1:nz(v);}  // 休息時間 前端→DB：明確 0 存為 -1；未填(null)仍存 0＝預設
 function supaCfg(){return !!(SUPA_URL&&SUPA_KEY);}
  
 // PostgREST 分頁抓取（避免單次查詢被 max-rows 截斷）
@@ -1192,7 +1194,7 @@ async function loadData(){
     att={};
     (attRows||[]).forEach(r=>{
       if(!r.att_key)return;
-      att[r.att_key]={leave:r.leave||'',inH:z(r.checkin),outH:z(r.checkout),brk:z(r.breaktime)};
+      att[r.att_key]={leave:r.leave||'',inH:z(r.checkin),outH:z(r.checkout),brk:bzLoad(r.breaktime)};
     });
     render(); postEmps();
     setStatus('已從資料庫載入（'+emps.length+' 位員工）');
@@ -1209,7 +1211,7 @@ function apiSetAtt(key,val){
   debounce('att:'+key,async()=>{
     try{
       const rec=att[key]||val||{};
-      const body={att_key:key,leave:(rec.leave||null),checkin:nz(rec.inH),checkout:nz(rec.outH),breaktime:nz(rec.brk)};
+      const body={att_key:key,leave:(rec.leave||null),checkin:nz(rec.inH),checkout:nz(rec.outH),breaktime:bzSave(rec.brk)};
       const res=await fetch(SUPA_URL+'/rest/v1/attendance?on_conflict=att_key',{
         method:'POST',
         headers:supaHeaders({'Prefer':'resolution=merge-duplicates,return=minimal'}),
