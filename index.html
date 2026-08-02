@@ -351,16 +351,16 @@
 
     <section class="panel" id="panel-staff">
       <div class="toolbar">
-        <button class="btn sm" id="btnPrivInstr">指導員資料（勞報用）</button>
-        <button class="btn sm" id="btnPrivEmp">員工薪資設定</button>
-        <div class="grow"></div>
         <div class="field"><label>勞報月份</label><select id="csvMonth" class="ctl"></select></div>
         <button class="btn" id="btnLaborCsv">匯出勞報 CSV</button>
+        <div class="grow"></div>
+        <button class="btn sm" id="btnPrivInstr">指導員資料（勞報用）</button>
       </div>
       <div class="toolbar" style="margin-top:2px">
         <div class="field"><label>薪資單月份</label><select id="slipMonth" class="ctl"></select></div>
         <label class="toggle"><input type="checkbox" id="slipArch" checked>含封存課程（外部薪資扣回）</label>
         <div class="grow"></div>
+        <button class="btn sm" id="btnPrivEmp">員工薪資設定</button>
         <button class="btn sm" id="btnSlipReload">重新整理</button>
       </div>
       <div id="slipList"></div>
@@ -1316,7 +1316,11 @@ window.addEventListener('message',function(ev){
         if(!resetDeadline)resetDeadline=fmtDateFull(dayBefore);
       });
       const leaveDates=[];
-      for(let dd=1;dd<=dim(y,m);dd++){const r=att[K(emp.id,y,m,dd)]||{};const lv=r.leave||'';if(lv==='事假'||lv==='病假'||lv==='上課假')leaveDates.push({d:dd,type:lv});}
+      for(let dd=1;dd<=dim(y,m);dd++){const r=att[K(emp.id,y,m,dd)]||{};const lv=r.leave||'';
+        if(lv==='事假'){const h=dayPersonalHours(emp.id,y,m,dd);leaveDates.push({d:dd,type:lv,hours:h,full:h>=STD});}
+        else if(lv==='病假'){const h=daySickHours(emp.id,y,m,dd);leaveDates.push({d:dd,type:lv,hours:h,full:h>=STD});}
+        else if(lv==='上課假'){leaveDates.push({d:dd,type:lv,hours:STD,full:true});}
+      }
       return {id:emp.id,name:emp.name,joinDate:emp.joinDate,classMax:emp.classMax,
         annTotal,annUsed,annRemain,annPeriod,compPrev,compDelta,compEnd,
         sickH,personalH,classDays,
@@ -2519,19 +2523,21 @@ window.addEventListener('load',()=>checkSession());
 const STAFF_EMAIL='saveme@anne.education';
 let USER_TOKEN='';
 function staffOK(){return CURRENT_USER===STAFF_EMAIL;}
-function supaHeadersAuth(extra={}){return {'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+(USER_TOKEN||SB_KEY),...extra};}
+async function freshToken(){try{const sb=sbClient();if(sb){const {data:{session}}=await sb.auth.getSession();if(session&&session.access_token)USER_TOKEN=session.access_token;}}catch(e){}return USER_TOKEN;}
+function supaHeadersAuth(tok,extra){extra=extra||{};return Object.assign({'Content-Type':'application/json','apikey':SB_KEY,'Authorization':'Bearer '+(tok||USER_TOKEN||SB_KEY)},extra);}
 
 /* ---- 保險級距（2026 概估；每年於此更新，已用實際薪資單校正）---- */
 const INS={
-  laborRate:0.025,            // 勞保員工負擔（普通事故11.5%+就保1%）×20%
-  laborCap:45800,            // 勞保投保薪資上限
+  laborOrdEmp:0.115*0.20,     // 勞保普通事故 員工負擔 = 11.5% × 20%
+  empInsEmp:0.010*0.20,       // 就業保險 員工負擔 = 1% × 20%
+  laborCap:45800,             // 勞保投保薪資上限
   laborGrades:[28800,30300,31800,33300,34800,36300,38200,40100,42000,43900,45800],
-  nhiRate:0.0517*0.30,       // 健保 5.17% × 自付30%
+  nhiRate:0.0517*0.30,        // 健保 5.17% × 自付30%
   nhiGrades:[40100,42000,43900,45800,48200,50600,53000,55400,57800],
   nhiDepCap:3
 };
 function insBracket(s,grades,cap){let g=grades.find(v=>v>=s);if(!g)g=grades[grades.length-1];if(cap!=null)g=Math.min(g,cap);return g;}
-function laborFee(s){return s?Math.round(insBracket(s,INS.laborGrades,INS.laborCap)*INS.laborRate):0;}
+function laborFee(s){if(!s)return 0;const b=insBracket(s,INS.laborGrades,INS.laborCap);return Math.round(b*INS.laborOrdEmp)+Math.round(b*INS.empInsEmp);}
 function nhiFee(s,deps){if(!s)return 0;const per=Math.round(insBracket(s,INS.nhiGrades,null)*INS.nhiRate);return per*(1+Math.min(Math.max(0,deps||0),INS.nhiDepCap));}
 function redeemPay(s,annDays,compH){return Math.round((annDays||0)*(s/30)+(compH||0)*(s/30/8));}
 function leaveBreak(base,classDays,personalH,sickH){
@@ -2542,7 +2548,7 @@ function leaveBreak(base,classDays,personalH,sickH){
 
 /* ---- 私密資料（instructor_private / employee_private，RLS + 本人 JWT）---- */
 const PRIV={instr:{},emp:{}};
-async function privGet(table){try{const r=await fetch(SB_URL+'/rest/v1/'+table+'?select=*',{headers:supaHeadersAuth()});if(!r.ok)throw 0;return await r.json();}catch(e){return [];}}
+async function privGet(table){try{const tok=await freshToken();const r=await fetch(SB_URL+'/rest/v1/'+table+'?select=*',{headers:supaHeadersAuth(tok)});if(!r.ok)throw 0;return await r.json();}catch(e){return [];}}
 async function loadPrivate(){
   if(!staffOK())return;
   const [ins,emp]=await Promise.all([privGet('instructor_private'),privGet('employee_private')]);
@@ -2550,7 +2556,9 @@ async function loadPrivate(){
   PRIV.emp={};(emp||[]).forEach(r=>PRIV.emp[r.emp_id]=r);
 }
 async function privUpsert(table,conflict,body){
-  const r=await fetch(SB_URL+'/rest/v1/'+table+'?on_conflict='+conflict,{method:'POST',headers:supaHeadersAuth({'Prefer':'resolution=merge-duplicates,return=representation'}),body:JSON.stringify(body)});
+  const tok=await freshToken();
+  const r=await fetch(SB_URL+'/rest/v1/'+table+'?on_conflict='+conflict,{method:'POST',headers:supaHeadersAuth(tok,{'Prefer':'resolution=merge-duplicates,return=representation'}),body:JSON.stringify(body)});
+  if(r.status===401)throw new Error('登入憑證已逾時，請重新整理頁面並重新以 Google 登入後再試。');
   if(!r.ok)throw new Error('HTTP '+r.status+'：'+(await r.text()));
   return (await r.json())[0];
 }
@@ -2600,6 +2608,15 @@ function downloadLaborCsv(){
 
 /* ---- 薪資單 ---- */
 let SLIP_CACHE={month:'',items:{}};
+function fmtSlash(iso){if(!iso)return '—';const p=String(iso).split('-');return p.length===3?(+p[0])+'/'+(+p[1])+'/'+(+p[2]):iso;}
+function slipLeaveLabel(m0,x){const md=(m0+1)+'/'+x.d;return x.full?(md+'全日'+x.type):(md+x.type+x.hours+'小時');}
+function buildNote(mo){
+  const L=[];
+  if(mo.extItems&&mo.extItems.length) L.push(mo.extItems.map(it=>it.name+'外部薪資 '+fmt(it.amt)).join('，')+'。');
+  if(mo.leaveDates&&mo.leaveDates.length) L.push(mo.leaveDates.map(x=>slipLeaveLabel(mo.m0,x)).join('，')+'。');
+  if(mo.overtime>0){const p=[];if(mo.redeemAnnDays>0)p.push('特休 '+mo.redeemAnnDays+' 天');if(mo.redeemCompHours>0)p.push('補休 '+mo.redeemCompHours+' 小時');if(p.length)L.push('本月兌換'+p.join('、')+'折現，計 $'+fmt(mo.overtime)+'。');}
+  return L.join('\n');
+}
 function slipModel(r,month,laborInt){
   const m0=+month.slice(4)-1;
   const priv=PRIV.emp[r.id]||{};
@@ -2608,49 +2625,61 @@ function slipModel(r,month,laborInt){
   const ext=laborInt?laborInt.amt:0, extItems=(laborInt&&laborInt.items)||[];
   const lab=laborFee(base), nhi=nhiFee(base,deps);
   const lb=leaveBreak(base,r.classDays,r.personalH,r.sickH);
-  const A=base+overtime, B=lab+nhi+lb.total+ext, net=A-B;
-  const noteLines=[];
-  if(extItems.length) noteLines.push(extItems.map(it=>it.name+'外部薪資 '+fmt(it.amt)).join('、')+'。');
-  if(r.leaveDates.length) noteLines.push(r.leaveDates.map(x=>(m0+1)+'/'+x.d+' '+x.type).join('、')+'。');
-  noteLines.push('至本月補休 '+r.compEnd+' 小時，特休剩餘 '+r.annRemain+' 天。');
-  if(overtime>0){const p=[];if(r.redeemAnnDays>0)p.push('特休 '+r.redeemAnnDays+' 天');if(r.redeemCompHours>0)p.push('補休 '+r.redeemCompHours+' 小時');noteLines.push('本月兌換'+p.join('、')+'，計 $'+fmt(overtime)+'。');}
-  return {id:r.id,name:r.name,month,base,deps,overtime,ext,extItems,lab,nhi,leave:lb.total,leaveBreak:lb,A,B,net,
+  const mo={id:r.id,name:r.name,month,m0,base,deps,overtime,ext,extItems,lab,nhi,leave:lb.total,
     annTotal:r.annTotal,annUsed:r.annUsed,annRemain:r.annRemain,annPeriod:r.annPeriod,
-    compPrev:r.compPrev,compDelta:r.compDelta,compEnd:r.compEnd,joinDate:r.joinDate,noteText:noteLines.join('\n')};
+    compPrev:r.compPrev,compDelta:r.compDelta,compEnd:r.compEnd,joinDate:r.joinDate,
+    leaveDates:r.leaveDates||[],redeemAnnDays:r.redeemAnnDays,redeemCompHours:r.redeemCompHours,noteEdited:false};
+  mo.net=(base+overtime)-(lab+nhi+lb.total+ext);
+  mo.noteText=buildNote(mo);
+  return mo;
 }
-function moneyCell(label,v){return v?`<div class="sc"><span>${label}</span><b>${fmt(v)}</b></div>`:'';}
+function slipEdit(id,field,val){
+  const mo=SLIP_CACHE.items[id]; if(!mo)return;
+  if(field==='note'){mo.noteText=val;mo.noteEdited=true;return;}
+  if(field==='overtime')mo.overtime=Math.round(+val||0);
+  if(field==='ext')mo.ext=Math.round(+val||0);
+  mo.net=(mo.base+mo.overtime)-(mo.lab+mo.nhi+mo.leave+mo.ext);
+  const nb=document.getElementById('slipnet-'+id); if(nb)nb.textContent=fmt(mo.net);
+  if(!mo.noteEdited){mo.noteText=buildNote(mo);const nt=document.getElementById('slipnote-'+id);if(nt)nt.value=mo.noteText;}
+}
 function slipCard(mo){
   const warn=!mo.base?'<span style="color:var(--danger);font-weight:600">（未設定月薪）</span>':'';
   return `<div class="card" style="margin-bottom:12px;padding:14px" id="slip-${mo.id}">
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <b style="font-size:15px">${esc(mo.name)}</b> ${warn}
       <span class="grow"></span>
-      <button class="btn sm" onclick="exportSlip(${mo.id})">列印 / 匯出薪資單</button>
+      <button class="btn sm" onclick="exportSlip(${mo.id})">匯出薪資單（PDF）</button>
     </div>
     <div class="slipgrid">
       <div class="sc"><span>薪資（本薪）</span><b>${fmt(mo.base)}</b></div>
-      ${moneyCell('加班費（兌換）',mo.overtime)}
+      <div class="sc"><span>加班費（兌換，可改）</span><input class="scin" type="number" value="${mo.overtime}" oninput="slipEdit(${mo.id},'overtime',this.value)"></div>
       <div class="sc ded"><span>勞保費</span><b>-${fmt(mo.lab)}</b></div>
       <div class="sc ded"><span>健保費（本人+${mo.deps}眷）</span><b>-${fmt(mo.nhi)}</b></div>
       ${mo.leave?`<div class="sc ded"><span>請假</span><b>-${fmt(mo.leave)}</b></div>`:''}
-      ${mo.ext?`<div class="sc ded"><span>外部薪資（扣回）</span><b>-${fmt(mo.ext)}</b></div>`:''}
-      <div class="sc tot"><span>合計</span><b>${fmt(mo.net)}</b></div>
+      <div class="sc ded"><span>外部薪資扣回（可改）</span><input class="scin" type="number" value="${mo.ext}" oninput="slipEdit(${mo.id},'ext',this.value)"></div>
+      <div class="sc tot"><span>合計</span><b id="slipnet-${mo.id}">${fmt(mo.net)}</b></div>
     </div>
-    <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);margin:8px 0 4px">
-      <span>特休 可休 ${mo.annTotal} 日／已休 ${mo.annUsed} 日（${mo.annPeriod}）</span>
-      <span>補休 至上月 ${mo.compPrev} 時／本月 ${mo.compDelta>=0?'+':''}${mo.compDelta} 時／至本月 ${mo.compEnd} 時</span>
+    <div class="leavebox">
+      <div class="lb"><div class="lbh">個人特別休假</div>
+        <div class="lbr"><span>請休時間</span><b>${mo.annPeriod}</b></div>
+        <div class="lbr"><span>可休日數</span><b>${mo.annTotal} 日</b></div>
+        <div class="lbr"><span>已休日數</span><b>${mo.annUsed} 日</b></div></div>
+      <div class="lb"><div class="lbh">個人加班補休</div>
+        <div class="lbr"><span>至上月累積</span><b>${mo.compPrev} 小時</b></div>
+        <div class="lbr"><span>本月增減</span><b>${mo.compDelta>=0?'+':''}${mo.compDelta} 小時</b></div>
+        <div class="lbr"><span>至本月累積</span><b>${mo.compEnd} 小時</b></div></div>
     </div>
     <div class="field"><label>備註（可編輯，匯出時採用）</label>
-      <textarea class="ctl" style="width:100%;min-height:56px" oninput="SLIP_CACHE.items[${mo.id}].noteText=this.value">${esc(mo.noteText)}</textarea></div>
+      <textarea id="slipnote-${mo.id}" class="ctl" style="width:100%;min-height:56px" oninput="slipEdit(${mo.id},'note',this.value)">${esc(mo.noteText)}</textarea></div>
   </div>`;
 }
-async function renderSlips(){
+async function renderSlips(retry){
   if(!staffOK())return;
   const month=$('#slipMonth').value; if(!month){$('#slipList').innerHTML='';return;}
-  $('#slipList').innerHTML='<div class="empty-hint" style="padding:20px">載入差勤資料中…</div>';
+  if(!retry)$('#slipList').innerHTML='<div class="empty-hint" style="padding:20px">載入差勤資料中…</div>';
   const y=+month.slice(0,4), m=+month.slice(4)-1;
   const rows=await getPayroll(y,m);
-  if(!rows.length){$('#slipList').innerHTML='<div class="empty-hint" style="padding:20px">差勤尚無員工，或資料仍在載入，請按「重新整理」再試。</div>';return;}
+  if(!rows.length){ if(!retry){setTimeout(()=>renderSlips(true),700);return;} $('#slipList').innerHTML='<div class="empty-hint" style="padding:20px">差勤尚無員工，或資料仍在載入，請按「重新整理」再試。</div>';return;}
   const inc=$('#slipArch').checked;
   const courses=S.courses.filter(c=>ym(c.date)===month&&(inc||!c.archived));
   const laborInt=aggLabor(courses).int;
@@ -2658,30 +2687,77 @@ async function renderSlips(){
   const html=rows.map(r=>{const mo=slipModel(r,month,laborInt[r.name]);SLIP_CACHE.items[r.id]=mo;return slipCard(mo);}).join('');
   $('#slipList').innerHTML=html;
 }
-function slipPrintHTML(mo){
-  const y=mo.month.slice(0,4),mm=+mo.month.slice(4);
-  const row2=[], row3=[];
-  const cols=[['薪資',mo.base,false],['加班費',mo.overtime,false],['勞保費',mo.lab,true],['健保費',mo.nhi,true],['請假',mo.leave,true],['外部薪資',mo.ext,true]];
-  const shown=cols.filter(c=>c[0]==='薪資'||c[0]==='勞保費'||c[0]==='健保費'||c[2]===false&&c[1]||c[1]); // 有值才顯示（薪資/勞健保固定）
-  const use=cols.filter(c=>['薪資','勞保費','健保費'].includes(c[0])||c[1]);
-  const ths=use.map(c=>`<th>${c[0]}</th>`).join(''), tds=use.map(c=>`<td>${fmt(c[1]||0)}</td>`).join('');
-  const note=mo.noteText.split('\n').filter(Boolean).map((s,i)=>`${i+1}. ${s}`).join('<br>');
-  return `<!doctype html><meta charset="utf-8"><title>${mo.name}_${y}_${mm}月薪資單</title>
-  <style>body{font-family:"Noto Sans TC",sans-serif;padding:32px;color:#222}h1{font-size:18px;margin:0}h2{font-size:15px;margin:2px 0 14px;font-weight:500}
-  table{border-collapse:collapse;width:100%;margin:6px 0}th,td{border:1px solid #999;padding:7px 10px;text-align:center;font-size:13px}th{background:#f3f3f3}
-  .r td{text-align:right}.note{font-size:12.5px;line-height:1.8;margin-top:14px}.sub{margin-top:16px}
-  @media print{button{display:none}}</style>
-  <h1>貓頭鷹之夢有限公司</h1><h2>${y}年${mm}月 薪資單　｜　到職日：${mo.joinDate||'—'}</h2>
-  <table><thead><tr>${ths}<th>合計</th></tr></thead><tbody><tr class="r">${tds}<td><b>${fmt(mo.net)}</b></td></tr></tbody></table>
-  <table class="sub"><tr><th>特休 可休</th><td>${mo.annTotal} 日</td><th>特休 已休</th><td>${mo.annUsed} 日</td><th>請休時間</th><td>${mo.annPeriod}</td></tr>
-  <tr><th>至上月補休</th><td>${mo.compPrev} 時</td><th>本月增減</th><td>${mo.compDelta>=0?'+':''}${mo.compDelta} 時</td><th>至本月補休</th><td>${mo.compEnd} 時</td></tr></table>
-  <div class="note"><b>備註：</b><br>${note}</div>
-  <button onclick="window.print()" style="margin-top:20px;padding:8px 18px">列印 / 存成 PDF</button>`;
+/* ---- 匯出 PDF（直接下載；數值為 0 的欄位不顯示）---- */
+function slipCols(mo){
+  const A=[{l:'薪資',v:mo.base}];
+  if(mo.overtime) A.push({l:'加班費',v:mo.overtime});
+  const B=[{l:'勞保費',v:mo.lab},{l:'健保費',v:mo.nhi}];
+  if(mo.leave) B.push({l:'請假',v:mo.leave});
+  if(mo.ext) B.push({l:'外部薪資',v:mo.ext});
+  return {A,B};
 }
-function exportSlip(id){
+function slipRenderHTML(mo){
+  const y=mo.month.slice(0,4), mm=+mo.month.slice(4);
+  const period=(mo.annPeriod||'—').replace(/\s*~\s*/,'-');
+  const {A,B}=slipCols(mo);
+  const R='style="text-align:right"',C='style="text-align:center"';
+  const th1=`<th rowspan="2">姓名</th><th colspan="${A.length}">應發金額 (A)</th><th colspan="${B.length}">應扣金額 (B)</th><th rowspan="2">合計<br>(A)-(B)</th>`;
+  const th2=[...A,...B].map(c=>`<th>${c.l}</th>`).join('');
+  const td=`<td>${esc(mo.name)}</td>`+[...A,...B].map(c=>`<td ${R}>${fmt(c.v)}</td>`).join('')+`<td ${R}><b>${fmt(mo.net)}</b></td>`;
+  const notes=mo.noteText.split('\n').map(s=>s.trim()).filter(Boolean).map((s,i)=>`<p class="nt">${i+1}. ${esc(s)}</p>`).join('');
+  return `<div class="slipdoc">
+    <p class="h1">貓頭鷹之夢有限公司</p>
+    <p class="h2">${y}年${mm}月 薪資單</p>
+    <p class="sub">到職日：${fmtSlash(mo.joinDate)}</p>
+    <table class="t"><tr>${th1}</tr><tr>${th2}</tr><tr>${td}</tr></table>
+    <table class="t2">
+      <tr><td colspan="2" ${C}><b>個人特別休假</b></td><td colspan="2" ${C}><b>個人加班補休</b></td></tr>
+      <tr><td colspan="2">請休時間：${period}</td><td>至上月累積補休日數</td><td ${C}>${mo.compPrev}小時</td></tr>
+      <tr><td>可休日數</td><td ${C}>${mo.annTotal}日</td><td>本月增減補休日數</td><td ${C}>${mo.compDelta}小時</td></tr>
+      <tr><td>已休日數</td><td ${C}>${mo.annUsed}日</td><td>至本月累積補休日數</td><td ${C}>${mo.compEnd}小時</td></tr>
+    </table>
+    <p class="nh">備註：</p>${notes}
+  </div>`;
+}
+const SLIP_CSS=`.slipdoc{width:700px;background:#fff;color:#000;font-family:"Microsoft JhengHei","微軟正黑體","PingFang TC","Noto Sans TC",sans-serif;padding:8px}
+.slipdoc .h1{font-size:22px;font-weight:bold;text-align:center;margin:0 0 6px}
+.slipdoc .h2{font-size:16px;text-align:center;margin:0 0 4px}
+.slipdoc .sub{font-size:14px;margin:0 0 10px}
+.slipdoc table{border-collapse:collapse;width:100%}
+.slipdoc .t td,.slipdoc .t th{border:1px solid #000;padding:6px 4px;font-size:14px;text-align:center;font-weight:normal}
+.slipdoc .t2{margin-top:12px}
+.slipdoc .t2 td{border:1px solid #000;padding:6px 8px;font-size:14px}
+.slipdoc .nh{font-weight:bold;margin:12px 0 4px;font-size:14px}
+.slipdoc .nt{margin:0 0 3px;font-size:14px}`;
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[data-x="'+src+'"]'))return res();const s=document.createElement('script');s.src=src;s.dataset.x=src;s.onload=()=>res();s.onerror=()=>rej(new Error('資源載入失敗'));document.head.appendChild(s);});}
+async function ensurePdfLibs(){
+  if(!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+  if(!(window.jspdf&&window.jspdf.jsPDF)) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+}
+async function exportSlip(id){
   const mo=SLIP_CACHE.items[id]; if(!mo)return;
   if(!mo.base&&!confirm('此員工尚未設定月薪，薪資單金額會是 0。仍要匯出？'))return;
-  const w=window.open('','_blank'); w.document.write(slipPrintHTML(mo)); w.document.close();
+  const y=mo.month.slice(0,4), mm=+mo.month.slice(4);
+  let host;
+  try{
+    toast('產生 PDF 中…');
+    await ensurePdfLibs();
+    host=document.createElement('div');
+    host.style.cssText='position:fixed;left:-10000px;top:0;z-index:-1';
+    host.innerHTML='<style>'+SLIP_CSS+'</style>'+slipRenderHTML(mo);
+    document.body.appendChild(host);
+    const node=host.querySelector('.slipdoc');
+    const canvas=await html2canvas(node,{scale:2,backgroundColor:'#ffffff'});
+    const img=canvas.toDataURL('image/jpeg',0.95);
+    const {jsPDF}=window.jspdf;
+    const pdf=new jsPDF({unit:'pt',format:'a4'});
+    const pw=pdf.internal.pageSize.getWidth(), margin=36;
+    const iw=pw-margin*2, ih=canvas.height*(iw/canvas.width);
+    pdf.addImage(img,'JPEG',margin,margin,iw,ih);
+    pdf.save(mo.name+'_'+y+'年'+mm+'月薪資單.pdf');
+    toast('已匯出 '+mo.name+' 的薪資單（PDF）');
+  }catch(e){ alert('PDF 匯出失敗：'+(e.message||e)+'\n（需連網載入 PDF 元件，請確認網路後再試）'); }
+  finally{ if(host)host.remove(); }
 }
 
 /* ---- modal：指導員資料 ---- */
@@ -2731,7 +2807,13 @@ function renderStaff(){
     #panel-staff .slipgrid{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
     #panel-staff .sc{background:#f6f7f9;border:1px solid var(--line);border-radius:8px;padding:7px 12px;min-width:120px;display:flex;flex-direction:column;gap:2px}
     #panel-staff .sc span{font-size:11px;color:var(--ink-2)} #panel-staff .sc b{font-size:15px}
-    #panel-staff .sc.ded b{color:var(--danger)} #panel-staff .sc.tot{background:#eef6ef;border-color:#bcd9bf} #panel-staff .sc.tot b{color:#1a7a50}`;
+    #panel-staff .sc.ded b{color:var(--danger)} #panel-staff .sc.tot{background:#eef6ef;border-color:#bcd9bf} #panel-staff .sc.tot b{color:#1a7a50}
+    #panel-staff .scin{font-size:15px;font-weight:700;width:96px;border:1px solid var(--line);border-radius:5px;padding:2px 6px;background:#fff}
+    #panel-staff .leavebox{display:flex;gap:12px;flex-wrap:wrap;margin:10px 0 4px}
+    #panel-staff .lb{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-width:230px;flex:1}
+    #panel-staff .lbh{font-weight:700;font-size:13px;margin-bottom:6px}
+    #panel-staff .lbr{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0;color:var(--ink-2)}
+    #panel-staff .lbr b{color:var(--ink);font-weight:600}`;
   document.head.appendChild(st);
   const on=(id,fn,ev)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev||'click',fn);};
   on('btnPrivInstr',openPrivInstr); on('privInstrClose',()=>$('#privInstrScrim').classList.remove('show')); on('pi-save',savePrivInstr);
