@@ -2507,12 +2507,16 @@ window.addEventListener('load',()=>checkSession());
 </div>
 <div class="scrim" id="privEmpScrim">
   <div class="modal">
-    <header><h3>員工薪資設定（薪資單用）</h3><button class="iconbtn" id="privEmpClose">✕</button></header>
+    <header><h3>員工資料設定</h3><button class="iconbtn" id="privEmpClose">✕</button></header>
     <div class="mbody">
       <div class="field" style="margin-bottom:10px"><label>選擇員工</label>
         <select id="pe-sel" class="ctl" style="width:100%"></select></div>
       <div class="field" style="margin-bottom:8px"><label>月薪（本薪）</label><input id="pe-salary" type="number" class="ctl" style="width:100%"></div>
       <div class="field" style="margin-bottom:8px"><label>健保眷屬數（附加眷屬人數，最多計 3 口）</label><input id="pe-deps" type="number" min="0" step="1" value="0" class="ctl" style="width:100%"></div>
+      <div class="field" style="margin-bottom:8px"><label>出生年月日</label><input id="pe-birth" type="date" class="ctl" style="width:100%"></div>
+      <div class="field" style="margin-bottom:8px"><label>身分證號碼</label><input id="pe-pid" class="ctl" style="width:100%"></div>
+      <div class="field" style="margin-bottom:8px"><label>住址</label><input id="pe-addr" class="ctl" style="width:100%"></div>
+      <div class="field" style="margin-bottom:8px"><label>緊急聯絡人</label><input id="pe-emerg" class="ctl" style="width:100%"></div>
       <div id="pe-hint" style="font-size:12px;color:var(--ink-2);margin:6px 0"></div>
       <div style="text-align:right;margin-top:12px"><button class="btn" id="pe-save">儲存</button></div>
     </div>
@@ -2712,7 +2716,7 @@ function slipRenderHTML(mo){
     <p class="h2">${y}年${mm}月 薪資單</p>
     <p class="sub">到職日：${fmtSlash(mo.joinDate)}</p>
     <table class="t">${cg}<tr>${th1}</tr><tr>${th2}</tr><tr>${td}</tr></table>
-    <table class="t2">
+    <table class="t2"><colgroup><col style="width:25%"><col style="width:25%"><col style="width:25%"><col style="width:25%"></colgroup>
       <tr><td colspan="2" ${C}><b>個人特別休假</b></td><td colspan="2" ${C}><b>個人加班補休</b></td></tr>
       <tr><td colspan="2">請休時間：${period}</td><td>至上月累積補休日數</td><td ${C}>${mo.compPrev}小時</td></tr>
       <tr><td>可休日數</td><td ${C}>${mo.annTotal}日</td><td>本月增減補休日數</td><td ${C}>${mo.compDelta}小時</td></tr>
@@ -2722,16 +2726,16 @@ function slipRenderHTML(mo){
   </div>`;
 }
 const SLIP_CSS=`.slipdoc{width:700px;background:#fff;color:#000;font-family:"Microsoft JhengHei","微軟正黑體","PingFang TC","Noto Sans TC",sans-serif;padding:8px}
-.slipdoc .h1{font-size:22px;font-weight:bold;text-align:center;margin:0 0 6px}
-.slipdoc .h2{font-size:16px;text-align:center;margin:0 0 4px}
-.slipdoc .sub{font-size:14px;margin:0 0 10px}
-.slipdoc table{border-collapse:collapse;width:100%;border:1.5px solid #000}
-.slipdoc .t{table-layout:fixed}
-.slipdoc .t td,.slipdoc .t th{border:1.5px solid #000;padding:13px 4px;font-size:14px;text-align:center;font-weight:normal;word-break:break-all}
+.slipdoc .h1{font-size:26px;font-weight:bold;text-align:center;margin:0 0 6px}
+.slipdoc .h2{font-size:19px;text-align:center;margin:0 0 4px}
+.slipdoc .sub{font-size:17px;margin:0 0 10px}
+.slipdoc table{border-collapse:collapse;width:100%;border:0.5px solid #000}
+.slipdoc .t,.slipdoc .t2{table-layout:fixed}
+.slipdoc .t td,.slipdoc .t th{border:0.5px solid #000;padding:13px 4px;font-size:17px;text-align:center;font-weight:normal;word-break:break-all}
 .slipdoc .t2{margin-top:12px}
-.slipdoc .t2 td{border:1.5px solid #000;padding:13px 8px;font-size:14px}
-.slipdoc .nh{font-weight:bold;margin:12px 0 4px;font-size:14px}
-.slipdoc .nt{margin:0 0 3px;font-size:14px}`;
+.slipdoc .t2 td{border:0.5px solid #000;padding:13px 8px;font-size:17px}
+.slipdoc .nh{font-weight:bold;margin:12px 0 4px;font-size:17px}
+.slipdoc .nt{margin:0 0 3px;font-size:17px}`;
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[data-x="'+src+'"]'))return res();const s=document.createElement('script');s.src=src;s.dataset.x=src;s.onload=()=>res();s.onerror=()=>rej(new Error('資源載入失敗'));document.head.appendChild(s);});}
 async function ensurePdfLibs(){
   if(!window.html2canvas) await loadScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
@@ -2787,12 +2791,12 @@ function openPrivEmp(){
   setTimeout(fill,150);
   $('#privEmpScrim').classList.add('show');
 }
-function fillPrivEmp(){const id=$('#pe-sel').value,p=PRIV.emp[id]||{};$('#pe-salary').value=(p.salary!=null&&p.salary!=='')?p.salary:'';$('#pe-deps').value=(p.deps!=null)?p.deps:0;empHint();}
+function fillPrivEmp(){const id=$('#pe-sel').value,p=PRIV.emp[id]||{};$('#pe-salary').value=(p.salary!=null&&p.salary!=='')?p.salary:'';$('#pe-deps').value=(p.deps!=null)?p.deps:0;$('#pe-birth').value=p.birthdate||'';$('#pe-pid').value=p.national_id||'';$('#pe-addr').value=p.address||'';$('#pe-emerg').value=p.emergency_contact||'';empHint();}
 function empHint(){const s=+$('#pe-salary').value||0,d=+$('#pe-deps').value||0;$('#pe-hint').textContent=s?`試算：勞保 -${fmt(laborFee(s))}、健保 -${fmt(nhiFee(s,d))}（本人+${Math.min(d,3)}眷）`:'';}
 async function savePrivEmp(){
   const id=$('#pe-sel').value; if(!id){alert('請先選擇員工。');return;}
-  const body={emp_id:+id,salary:+$('#pe-salary').value||0,deps:+$('#pe-deps').value||0};
-  try{const row=await privUpsert('employee_private','emp_id',body);PRIV.emp[id]=row||body;toast('已儲存員工薪資設定');}
+  const body={emp_id:+id,salary:+$('#pe-salary').value||0,deps:+$('#pe-deps').value||0,birthdate:$('#pe-birth').value||null,national_id:$('#pe-pid').value.trim(),address:$('#pe-addr').value.trim(),emergency_contact:$('#pe-emerg').value.trim()};
+  try{const row=await privUpsert('employee_private','emp_id',body);PRIV.emp[id]=row||body;toast('已儲存員工資料');}
   catch(e){alert('儲存失敗：'+(e.message||e)+'\n（請確認已在 Supabase 建立 employee_private 表與 RLS）');}
 }
 
