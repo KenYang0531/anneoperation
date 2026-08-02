@@ -2652,11 +2652,11 @@ function slipCard(mo){
     </div>
     <div class="slipgrid">
       <div class="sc"><span>薪資（本薪）</span><b>${fmt(mo.base)}</b></div>
-      <div class="sc"><span>加班費（兌換，可改）</span><input class="scin" type="number" value="${mo.overtime}" oninput="slipEdit(${mo.id},'overtime',this.value)"></div>
+      <div class="sc"><span>加班費（休假兌換）</span><input class="scin" type="number" value="${mo.overtime}" oninput="slipEdit(${mo.id},'overtime',this.value)"></div>
       <div class="sc ded"><span>勞保費</span><b>-${fmt(mo.lab)}</b></div>
       <div class="sc ded"><span>健保費（本人+${mo.deps}眷）</span><b>-${fmt(mo.nhi)}</b></div>
       ${mo.leave?`<div class="sc ded"><span>請假</span><b>-${fmt(mo.leave)}</b></div>`:''}
-      <div class="sc ded"><span>外部薪資扣回（可改）</span><input class="scin" type="number" value="${mo.ext}" oninput="slipEdit(${mo.id},'ext',this.value)"></div>
+      <div class="sc ded"><span>外部薪資扣回</span><input class="scin" type="number" value="${mo.ext}" oninput="slipEdit(${mo.id},'ext',this.value)"></div>
       <div class="sc tot"><span>合計</span><b id="slipnet-${mo.id}">${fmt(mo.net)}</b></div>
     </div>
     <div class="leavebox">
@@ -2704,12 +2704,14 @@ function slipRenderHTML(mo){
   const th1=`<th rowspan="2">姓名</th><th colspan="${A.length}">應發金額 (A)</th><th colspan="${B.length}">應扣金額 (B)</th><th rowspan="2">合計<br>(A)-(B)</th>`;
   const th2=[...A,...B].map(c=>`<th>${c.l}</th>`).join('');
   const td=`<td>${esc(mo.name)}</td>`+[...A,...B].map(c=>`<td ${R}>${fmt(c.v)}</td>`).join('')+`<td ${R}><b>${fmt(mo.net)}</b></td>`;
+  const total=1+A.length+B.length+1;
+  const cg='<colgroup>'+Array(total).fill(`<col style="width:${(100/total).toFixed(4)}%">`).join('')+'</colgroup>';
   const notes=mo.noteText.split('\n').map(s=>s.trim()).filter(Boolean).map((s,i)=>`<p class="nt">${i+1}. ${esc(s)}</p>`).join('');
   return `<div class="slipdoc">
     <p class="h1">貓頭鷹之夢有限公司</p>
     <p class="h2">${y}年${mm}月 薪資單</p>
     <p class="sub">到職日：${fmtSlash(mo.joinDate)}</p>
-    <table class="t"><tr>${th1}</tr><tr>${th2}</tr><tr>${td}</tr></table>
+    <table class="t">${cg}<tr>${th1}</tr><tr>${th2}</tr><tr>${td}</tr></table>
     <table class="t2">
       <tr><td colspan="2" ${C}><b>個人特別休假</b></td><td colspan="2" ${C}><b>個人加班補休</b></td></tr>
       <tr><td colspan="2">請休時間：${period}</td><td>至上月累積補休日數</td><td ${C}>${mo.compPrev}小時</td></tr>
@@ -2723,10 +2725,11 @@ const SLIP_CSS=`.slipdoc{width:700px;background:#fff;color:#000;font-family:"Mic
 .slipdoc .h1{font-size:22px;font-weight:bold;text-align:center;margin:0 0 6px}
 .slipdoc .h2{font-size:16px;text-align:center;margin:0 0 4px}
 .slipdoc .sub{font-size:14px;margin:0 0 10px}
-.slipdoc table{border-collapse:collapse;width:100%}
-.slipdoc .t td,.slipdoc .t th{border:1px solid #000;padding:6px 4px;font-size:14px;text-align:center;font-weight:normal}
+.slipdoc table{border-collapse:collapse;width:100%;border:1.5px solid #000}
+.slipdoc .t{table-layout:fixed}
+.slipdoc .t td,.slipdoc .t th{border:1.5px solid #000;padding:13px 4px;font-size:14px;text-align:center;font-weight:normal;word-break:break-all}
 .slipdoc .t2{margin-top:12px}
-.slipdoc .t2 td{border:1px solid #000;padding:6px 8px;font-size:14px}
+.slipdoc .t2 td{border:1.5px solid #000;padding:13px 8px;font-size:14px}
 .slipdoc .nh{font-weight:bold;margin:12px 0 4px;font-size:14px}
 .slipdoc .nt{margin:0 0 3px;font-size:14px}`;
 function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector('script[data-x="'+src+'"]'))return res();const s=document.createElement('script');s.src=src;s.dataset.x=src;s.onload=()=>res();s.onerror=()=>rej(new Error('資源載入失敗'));document.head.appendChild(s);});}
