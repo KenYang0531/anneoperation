@@ -1936,9 +1936,12 @@ function salaryByInstr(month,inc){
 }
 function buildSalaryMessage(name,d,month){
   const L=['請確認一下 '+month.slice(0,4)+'/'+month.slice(4)+' 的費用'];
-  if(d.company){L.push('公司');d.company.items.forEach(it=>L.push(fmtDate(it.date)+'　'+it.name+'  $'+fmt(it.fee+it.transport)));L.push('共 $'+fmt(d.company.fee+d.company.transport));}
-  if(d.assoc){L.push('協會');d.assoc.items.forEach(it=>L.push(fmtDate(it.date)+'　'+it.name+'  $'+fmt(it.fee+it.transport)));L.push('共 $'+fmt(d.assoc.fee+d.assoc.transport));}
-  if(d.labor){L.push('已經簽署勞報的課程，將由該單位直接支付');d.labor.items.forEach(it=>L.push(fmtDate(it.date)+'　'+it.name+'  $'+fmt(it.amt)));}
+  const line=it=>fmtDate(it.date)+'　'+it.name+'  $'+fmt(it.fee+it.transport)+(it.transport?'（含$'+fmt(it.transport)+'交通費）':'');
+  const blocks=[];
+  if(d.company){const b=['公司'];d.company.items.forEach(it=>b.push(line(it)));b.push('共 $'+fmt(d.company.fee+d.company.transport));blocks.push(b.join('\n'));}
+  if(d.assoc){const b=['協會'];d.assoc.items.forEach(it=>b.push(line(it)));b.push('共 $'+fmt(d.assoc.fee+d.assoc.transport));blocks.push(b.join('\n'));}
+  if(d.labor){const b=['已經簽署勞報的課程，將由該單位直接支付'];d.labor.items.forEach(it=>b.push(fmtDate(it.date)+'　'+it.name+'  $'+fmt(it.amt)));blocks.push(b.join('\n'));}
+  L.push('',blocks.join('\n\n'));
   L.push('','如有問題，可以向翔文詢問，謝謝');
   return L.join('\n');
 }
