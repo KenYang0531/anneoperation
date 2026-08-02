@@ -2708,7 +2708,8 @@ function openPrivEmp(){
   setTimeout(fill,150);
   $('#privEmpScrim').classList.add('show');
 }
-function fillPrivEmp(){const id=$('#pe-sel').value,p=PRIV.emp[id]||{};$('#pe-salary').value=p.salary||'';$('#pe-deps').value=p.deps||0;const s=+$('#pe-salary').value||0,d=+$('#pe-deps').value||0;$('#pe-hint').textContent=s?`試算：勞保 -${fmt(laborFee(s))}、健保 -${fmt(nhiFee(s,d))}（本人+${Math.min(d,3)}眷）`:'';}
+function fillPrivEmp(){const id=$('#pe-sel').value,p=PRIV.emp[id]||{};$('#pe-salary').value=(p.salary!=null&&p.salary!=='')?p.salary:'';$('#pe-deps').value=(p.deps!=null)?p.deps:0;empHint();}
+function empHint(){const s=+$('#pe-salary').value||0,d=+$('#pe-deps').value||0;$('#pe-hint').textContent=s?`試算：勞保 -${fmt(laborFee(s))}、健保 -${fmt(nhiFee(s,d))}（本人+${Math.min(d,3)}眷）`:'';}
 async function savePrivEmp(){
   const id=$('#pe-sel').value; if(!id){alert('請先選擇員工。');return;}
   const body={emp_id:+id,salary:+$('#pe-salary').value||0,deps:+$('#pe-deps').value||0};
@@ -2735,7 +2736,7 @@ function renderStaff(){
   const on=(id,fn,ev)=>{const el=document.getElementById(id);if(el)el.addEventListener(ev||'click',fn);};
   on('btnPrivInstr',openPrivInstr); on('privInstrClose',()=>$('#privInstrScrim').classList.remove('show')); on('pi-save',savePrivInstr);
   on('btnPrivEmp',openPrivEmp); on('privEmpClose',()=>$('#privEmpScrim').classList.remove('show')); on('pe-save',savePrivEmp);
-  on('pe-salary',fillPrivEmp,'input'); on('pe-deps',fillPrivEmp,'input');
+  on('pe-salary',empHint,'input'); on('pe-deps',empHint,'input');
   on('btnLaborCsv',downloadLaborCsv); on('btnSlipReload',renderSlips);
   on('slipMonth',renderSlips,'change'); on('slipArch',renderSlips,'change');
   document.querySelectorAll('#privInstrScrim,#privEmpScrim').forEach(s=>s.addEventListener('click',e=>{if(e.target===s)s.classList.remove('show');}));
